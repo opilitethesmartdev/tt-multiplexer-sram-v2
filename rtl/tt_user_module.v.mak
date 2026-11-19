@@ -105,7 +105,7 @@ module tt_user_module #(
 			);
 %  if mod.analog:
 %   for (pin_int, pin_ext) in mod.analog.items():
-			${mod.asw_module} tt_asw_${pin_int}_I (
+			(* keep *) ${mod.asw_module} tt_asw_${pin_int}_I (
 `ifdef USE_POWER_PINS
 				.VDPWR   (VDPWR),
 				.VAPWR   (VAPWR),
@@ -118,7 +118,7 @@ module tt_user_module #(
 %   endfor
 %  endif
 %  if mod.pg_vdd_module is not None:
-			${mod.pg_vdd_module} tt_pg_vdd_I (
+			(* keep *) ${mod.pg_vdd_module} tt_pg_vdd_I (
 `ifdef USE_POWER_PINS
 				.GPWR    (l_vdpwr),
 				.VPWR    (VDPWR),
@@ -132,7 +132,7 @@ module tt_user_module #(
 `endif
 %  endif
 %  if mod.pg_vaa_module is not None:
-			${mod.pg_vaa_module} tt_pg_vaa_I (
+			(* keep *) ${mod.pg_vaa_module} tt_pg_vaa_I (
 `ifdef USE_POWER_PINS
 				.GAPWR   (l_vapwr),
 				.VAPWR   (VAPWR),
