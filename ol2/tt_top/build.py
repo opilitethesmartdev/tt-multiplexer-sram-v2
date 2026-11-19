@@ -252,6 +252,25 @@ if __name__ == '__main__':
 			def_text = def_text.replace(old, new)
 		pathlib.Path(def_template).write_text(def_text)
 
+	# Only declare power connections for macros that actually survived
+	# synthesis. Optional analog switches and power gates are absent when no
+	# user block needs them, and OpenROAD treats an unmatched
+	# PDN_MACRO_CONNECTIONS entry as a hard error.
+	pdn_macro_connections = [
+		"top_I.*mux_I vdpwr vgnd VDPWR VGND",
+		"top_I.ctrl_I vdpwr vgnd VDPWR VGND",
+		"top_I.sram_lo_I vdpwr vgnd VPWR VGND",
+		"top_I.sram_hi_I vdpwr vgnd VPWR VGND",
+	]
+	macro_instances = set()
+	for md in macros.values():
+		macro_instances.update(md['instances'].keys())
+	if any('tt_pg_vdd_I' in i for i in macro_instances):
+		pdn_macro_connections.append("top_I.*tt_pg_vdd_I vdpwr vgnd VPWR VGND")
+	if any('tt_asw_' in i for i in macro_instances):
+		pdn_macro_connections.append("top_I.*tt_asw_.* vdpwr vgnd VDPWR VGND")
+		pdn_macro_connections.append("top_I.*tt_asw_.* vapwr vgnd VAPWR VGND")
+
 	# Custom config
 	flow_cfg = {
 		# Main design properties
@@ -299,15 +318,7 @@ if __name__ == '__main__':
 
 		"PDN_CFG": "dir::pdn.tcl",
 		"PDN_CONNECT_MACROS_TO_GRID": True,
-		"PDN_MACRO_CONNECTIONS": [
-			"top_I.*mux_I vdpwr vgnd VDPWR VGND",
-			"top_I.ctrl_I vdpwr vgnd VDPWR VGND",
-			"top_I.*tt_pg_vdd_I vdpwr vgnd VPWR VGND",
-			"top_I.*tt_asw_.* vdpwr vgnd VDPWR VGND",
-			"top_I.*tt_asw_.* vapwr vgnd VAPWR VGND",
-			"top_I.sram_lo_I vdpwr vgnd VPWR VGND",
-			"top_I.sram_hi_I vdpwr vgnd VPWR VGND",
-		],
+		"PDN_MACRO_CONNECTIONS": pdn_macro_connections,
 		"PDN_ENABLE_GLOBAL_CONNECTIONS": True,
 
 		"FP_PDN_CORE_RING"          : True,
