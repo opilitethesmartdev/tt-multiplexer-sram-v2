@@ -88,6 +88,9 @@ module tt_mux #(
 	wire [U_IW_STD-1:0] um_iwa_std[0:N_UM-1];
 	wire [N_SRAM_IW-1:0] um_iwa_sram[0:N_UM-1];
 
+	wire [N_SRAM_OW-1:0] sram_ow_int;
+	wire [N_SRAM_OW-1:0] sram_ow_pre;
+
 	// Decoding
 	wire            ena;
 	wire      [3:0] addr_match;
@@ -179,7 +182,7 @@ module tt_mux #(
 	) bus_pull_sram_ow_I[N_SRAM_OW-1:0] (
 		.a  (tie_zero),
 		.tx (branch_sel_n_tbe),
-		.z  (sram_ow)
+		.z  (sram_ow_int)
 	);
 
 	// Spine drive TBUF for Outward
@@ -201,6 +204,21 @@ module tt_mux #(
 		.a  (so_usr_pre),
 		.tx (branch_sel_tbe),
 		.z  (so_usr)
+	);
+
+	tt_prim_buf #(
+		.HIGH_DRIVE(0)
+	) buf_sram_ow_I[N_SRAM_OW-1:0] (
+		.a  (sram_ow_int),
+		.z  (sram_ow_pre)
+	);
+
+	tt_prim_tbuf #(
+		.HIGH_DRIVE(1)
+	) tbuf_spine_sram_ow_I[N_SRAM_OW-1:0] (
+		.a  (sram_ow_pre),
+		.tx (branch_sel_tbe),
+		.z  (sram_ow)
 	);
 
 	// (Zeroing) buffer for Inward
@@ -322,7 +340,7 @@ module tt_mux #(
 				) tbuf_sram_ow_I[N_SRAM_OW-1:0] (
 					.a  (l_sram_ow),
 					.tx (l_tbe),
-					.z  (sram_ow)
+					.z  (sram_ow_int)
 				);
 			end
 
