@@ -146,8 +146,8 @@ module tt_user_module #(
 			assign l_vapwr = VAPWR;
 `endif
 %  endif
-		end
 %  endif
+		end
 % endfor
 		default: begin
 			// Tie-off
