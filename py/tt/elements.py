@@ -687,15 +687,24 @@ class Top(LayoutElement):
 		macros = super().get_sub_macros()
 		# The SRAM is a direct instance in tt_top.v; keep its physical
 		# position from the reserved slot but use the RTL instance name.
-		return [
-			m._replace(inst_name='sram_lo_I') if (
-				m.mod_name == 'SP6TSRAM256x32' and m.inst_name.endswith('sram_lo_I')
-			) else
-			m._replace(inst_name='sram_hi_I') if (
-				m.mod_name == 'SP6TSRAM256x32' and m.inst_name.endswith('sram_hi_I')
-			) else m
-			for m in macros
-		]
+		# The Arrakeen macro is 137.375 um tall (35.0446 gf180 sites), so
+		# snap it to the placement site to keep OpenROAD's detailed
+		# placement padding check happy.
+		site_w = self.layout.cfg.pdk.site.width
+		site_h = self.layout.cfg.pdk.site.height
+		def snap(m):
+			if m.mod_name != 'SP6TSRAM256x32':
+				return m
+			p = Point(
+				(m.pos.x // site_w) * site_w,
+				(m.pos.y // site_h) * site_h,
+			)
+			if m.inst_name.endswith('sram_lo_I'):
+				return m._replace(inst_name='sram_lo_I', pos=p)
+			if m.inst_name.endswith('sram_hi_I'):
+				return m._replace(inst_name='sram_hi_I', pos=p)
+			return m._replace(pos=p)
+		return [ snap(m) for m in macros ]
 
 	def process_logos(self, layout):
 
