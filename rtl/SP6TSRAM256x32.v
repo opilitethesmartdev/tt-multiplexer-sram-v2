@@ -26,16 +26,16 @@ module SP6TSRAM256x32(a, d, we, clk, q);
 	always @(posedge clk) begin
 		a_latch <= a;
 		if (we[0]) begin
-			mem[a][7:0] <= d[7:0];
+			mem[a_latch][7:0] <= d[7:0];
 		end
 		if (we[1]) begin
-			mem[a][15:8] <= d[15:8];
+			mem[a_latch][15:8] <= d[15:8];
 		end
 		if (we[2]) begin
-			mem[a][23:16] <= d[23:16];
+			mem[a_latch][23:16] <= d[23:16];
 		end
 		if (we[3]) begin
-			mem[a][31:24] <= d[31:24];
+			mem[a_latch][31:24] <= d[31:24];
 		end
 	end
 
