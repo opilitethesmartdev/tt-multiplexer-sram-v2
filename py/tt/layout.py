@@ -192,7 +192,7 @@ class Layout:
 
 			# Divide up assuming blocks are twice as high
 			# as the row-mux
-		HM_MUX = 1
+		HM_MUX = 2
 		HM_BLK = 2
 
 		tmp_height = avail_height // (self.cfg.tt.grid.y // 2)

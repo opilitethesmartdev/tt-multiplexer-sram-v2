@@ -78,7 +78,7 @@ pdk:
 tt:
   grid:     # In number of blocks
     x:  8   # Must be divisible by 4
-    y: 20   # Must be EVEN
+    y: 16   # Must be EVEN
   sram:
     addr_width: 9
     data_width: 32
