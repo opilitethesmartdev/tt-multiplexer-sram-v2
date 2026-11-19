@@ -279,7 +279,7 @@ if __name__ == '__main__':
 		"SIGNOFF_SDC_FILE" : "dir::signoff.sdc",
 
 		# Synthesis
-		"SYNTH_ELABORATE_ONLY"      : True,
+		"SYNTH_ELABORATE_ONLY"      : False,
 		"SYNTH_USE_PG_PINS_DEFINES" : "USE_POWER_PINS",
 
 		"SYNTH_EXCLUSION_CELL_LIST" : "dir::no_synth_cells.txt",
