@@ -59,7 +59,8 @@ module tt_formal;
     assign { io_in[13], io_in[6:0] } = io_out[31:24];
 
     // loop back bidirectional outs to ins, depending on output enable
-    assign io_in[23:16] = io_out[23:16] & (~io_oex[23:16]);
+    // gf180mcuD uses active-high output enables
+    assign io_in[23:16] = io_out[23:16] & (io_oex[23:16]);
 
 
 endmodule // tt_formal
