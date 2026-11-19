@@ -35,8 +35,8 @@ class Router:
 		# Find useful data
 		tech = reader.db.getTech()
 
-		self.layer_h = tech.findLayer('met3')
-		self.layer_v = tech.findLayer('met4')
+		self.layer_h = tech.findLayer('Metal3')
+		self.layer_v = tech.findLayer('Metal4')
 		self.via     = tech.findVia('M3M4_PR')
 
 		self.x_spine = []
@@ -412,8 +412,8 @@ class Router:
 		tech = self.reader.db.getTech()
 
 		via = {
-			('met2', 'met3'): tech.findVia('M2M3_PR'),
-			('met3', 'met4'): tech.findVia('M3M4_PR'),
+			('Metal2', 'Metal3'): tech.findVia('M2M3_PR'),
+			('Metal3', 'Metal4'): tech.findVia('M3M4_PR'),
 		}
 
 		# Scan all BTerm to find gpio_loopback_{zero,one}[]
@@ -506,8 +506,8 @@ class Router:
 		tech = self.reader.db.getTech()
 
 		via = {
-			('met2', 'met3'): tech.findVia('M2M3_PR'),
-			('met3', 'met4'): tech.findVia('M3M4_PR'),
+			('Metal2', 'Metal3'): tech.findVia('M2M3_PR'),
+			('Metal3', 'Metal4'): tech.findVia('M3M4_PR'),
 		}
 
 		# Get full die area
@@ -617,8 +617,8 @@ class Router:
 		# Get all layers and config
 		tech = self.reader.db.getTech()
 
-		layer_v = tech.findLayer('met4')
-		layer_h = tech.findLayer('met3')
+		layer_v = tech.findLayer('Metal4')
+		layer_h = tech.findLayer('Metal3')
 
 		cfg_v = self.tti.cfg.pdk.tracks.met4.x
 		cfg_h = self.tti.cfg.pdk.tracks.met3.y
@@ -821,7 +821,7 @@ class ModulePowerStrapper:
 		tech = reader.db.getTech()
 
 		self.vg = ViaGenerator(self.reader, 'M4M5_PR')
-		self.layer = tech.findLayer('met5')
+		self.layer = tech.findLayer('Metal5')
 
 		self.stripe_space, self.stripe_width = self._find_stripe_space_width()
 		self.space = 2250
@@ -837,7 +837,7 @@ class ModulePowerStrapper:
 		stripes = [
 			w for w in sw.getWires() if (
 				not w.isVia() and
-				w.getTechLayer().getName() == 'met5' and
+				w.getTechLayer().getName() == 'Metal5' and
 				w.getWireShapeType() == 'STRIPE'
 			)
 		]
@@ -1038,7 +1038,7 @@ class RingPowerStrapper:
 		# Find useful data
 		self.tech = tech = reader.db.getTech()
 
-		self.layer = tech.findLayer('met3')
+		self.layer = tech.findLayer('Metal3')
 		self.viagen = ViaGenerator(reader, 'M3M4_PR_C')
 
 	def find_ring_for_net(self, net):
@@ -1077,7 +1077,7 @@ class RingPowerStrapper:
 	def complete_ring(self, net, ring):
 		sw = odb.dbSWire.create(net, "ROUTED")
 		for box in [ ring['b'], ring['t'] ]:
-			odb.createSBoxes(sw, self.tech.findLayer('met4'), [odb.Rect(box.xMin(), box.yMin(), box.xMax(), box.yMax())], "RING")
+			odb.createSBoxes(sw, self.tech.findLayer('Metal4'), [odb.Rect(box.xMin(), box.yMin(), box.xMax(), box.yMax())], "RING")
 
 	def strap_draw_lr(self, sw, sxl, sxr, rxl, rxr, yb, yt):
 		# Stripe
@@ -1110,7 +1110,7 @@ class RingPowerStrapper:
 		for bpin in  bterm.getBPins():
 			for bbox in bpin.getBoxes():
 				# All power pins are expected to be on met3
-				if bbox.getTechLayer().getName() != 'met3':
+				if bbox.getTechLayer().getName() != 'Metal3':
 					continue
 
 				# Which side is the pin on ?
@@ -1196,8 +1196,8 @@ class AnalogRouter:
 	def prepare_tech(self):
 		# Find tech and layers
 		tech = self.reader.db.getTech()
-		self.layer_bot = tech.findLayer('met3')
-		self.layer_top = tech.findLayer('met4')
+		self.layer_bot = tech.findLayer('Metal3')
+		self.layer_top = tech.findLayer('Metal4')
 		self.via_sig   = tech.findVia('M3M4_PR')
 
 		# Create via for analog signal
@@ -1209,7 +1209,7 @@ class AnalogRouter:
 
 		# Create non-default rule
 		self.ndr = ndr = odb.dbTechNonDefaultRule_create(self.reader.block, 'analog_track')
-		for ln in [ 'li1', 'met1', 'met2', 'met3', 'met4', 'met5' ]:
+		for ln in [ 'Metal1', 'Metal2', 'Metal3', 'Metal4', 'Metal5' ]:
 			ly = tech.findLayer(ln)
 			lr = odb.dbTechLayerRule_create(ndr, ly)
 			lr.setWidth(900)
