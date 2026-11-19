@@ -17,6 +17,7 @@ RTL_SRC=$(addprefix rtl/, \
 	tt_top.v \
 	tt_ctrl.v \
 	tt_mux.v \
+	SP6TSRAM256x32.v \
 )
 
 RTL_INC=$(addprefix rtl/, \
@@ -92,15 +93,18 @@ sim/tt_user_module.v: rtl/tt_user_module.v.mak sim/modules_sim.yaml
 
 # Formal targets
 formal/modules_tristate.yaml:
-	./py/gen_formal.py --module test > $@
+	TT_CONFIG=gf180mcuD.yaml ./py/gen_formal.py --module test > $@
 
 formal/modules_connectivity.yaml:
-	./py/gen_formal.py --module formal > $@
+	TT_CONFIG=gf180mcuD.yaml ./py/gen_formal.py --module formal > $@
+
+formal/tt_defs.vh: rtl/tt_defs.vh.mak
+	TT_CONFIG=gf180mcuD.yaml ./py/gen_tt_defs.py $^ > $@
 
 formal/tt_user_module_%.v: rtl/tt_user_module.v.mak formal/modules_%.yaml
-	TT_CONFIG=sky130_no_analog.yaml ./py/gen_tt_user_module.py $^ > $@
+	TT_CONFIG=gf180mcuD.yaml ./py/gen_tt_user_module.py $^ > $@
 
-formal_%: formal/tt_user_module_%.v $(RTL_SRC) $(RTL_INC)
+formal_%: formal/tt_defs.vh formal/tt_user_module_%.v $(RTL_SRC)
 	cd formal && sby -f tt_$*.sby
 
 # Cleanup
@@ -115,6 +119,7 @@ clean:
 		sim/tt_user_module.v \
 		formal/modules_*.v \
 		formal/modules_*.yaml \
+		formal/tt_defs.vh \
 		formal/*.vcd \
 		$(NULL)
 	rm -Rf formal/tt_tristate
