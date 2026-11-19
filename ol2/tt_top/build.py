@@ -63,6 +63,26 @@ class CustomRoute(OdbpyStep):
 		)
 
 
+@Step.factory.register()
+class OptionalManualMacroPlacement(Odb.ManualMacroPlacement):
+	"""Place all macros present in the synthesized design.
+
+	TinyTapeout's geometric layout can include optional power-gate instances
+	that synthesis removes when the corresponding user block is not powered.
+	Those absent instances have nothing to place, so skip them while still
+	placing every macro instance that survives synthesis.
+	"""
+
+	id = "TT.Top.OptionalManualMacroPlacement"
+	name = "Manual Macro Placement (skip absent optional instances)"
+
+	def get_script_path(self):
+		return os.path.join(
+			os.path.dirname(__file__),
+			"odb_manual_macro_placement.py"
+		)
+
+
 class TopFlow(SequentialFlow):
 
 	Steps: List[Type[Step]] = [
@@ -72,7 +92,8 @@ class TopFlow(SequentialFlow):
 		Checker.YosysSynthChecks,
 		OpenROAD.Floorplan,
 		Odb.ApplyDEFTemplate,
-		Odb.ManualMacroPlacement,
+		Odb.CustomIOPlacement,
+		OptionalManualMacroPlacement,
 		CustomPower,
 		OpenROAD.GeneratePDN,
 		OpenROAD.GlobalPlacement,
@@ -165,6 +186,7 @@ if __name__ == '__main__':
 	# Generate macros
 	macros = { }
 	user_modules = []
+	sram_user_modules = set()
 	disc_modules = []
 
 	for m in tti.die.get_sub_macros():
@@ -176,6 +198,8 @@ if __name__ == '__main__':
 			}
 			if m.mod_name.startswith('tt_um_'):
 				user_modules.append(m.mod_name)
+				if getattr(m.elem, 'uses_sram', False):
+					sram_user_modules.add(m.mod_name)
 			else:
 				md = {
 					'nl': f'dir::verilog/{m.mod_name:s}.v',
@@ -195,22 +219,49 @@ if __name__ == '__main__':
 			"orientation": m.orient,
 		}
 
-	# Generate dummy for all user modules
+	# Generate logical stubs for user macros. SRAM-capable modules have
+	# the additional shared-memory pins in their Verilog interface.
 	mod_tpl = open('tt_um_tpl.v', 'r').read()
+	mod_tpl_sram = open('tt_um_sram_tpl.v', 'r').read()
 	open('verilog/tt_um_all.v', 'w').write('\n'.join([
-		mod_tpl.format(mod_name=m)
+		(mod_tpl_sram if m in sram_user_modules else mod_tpl).format(mod_name=m)
 			for m in user_modules
 	]))
+
+	design_name = os.getenv('DESIGN_NAME') or (
+		'tt_gf_wrapper' if tti.cfg.pdk.name == 'gf180mcuD' else 'openframe_project_wrapper'
+	)
+
+	# The shared wrapper DEF is authored for SKY130. For GF180, retain its
+	# special power/ground pin locations, but translate the design and
+	# technology identifiers. The pin layer names were already translated to
+	# GF180 (Metal2/Metal3) when the template was first imported; signal-pin
+	# mismatches are handled permissively below and the 74 raw pads are placed
+	# by Odb.CustomIOPlacement.
+	def_template = 'openframe_project_wrapper.def'
+	if tti.cfg.pdk.name == 'gf180mcuD':
+		def_template = 'tt_gf_wrapper.def'
+		def_text = pathlib.Path('openframe_project_wrapper.def').read_text()
+		def_replacements = (
+			('DESIGN openframe_project_wrapper ;', 'DESIGN tt_gf_wrapper ;'),
+			('TECHNOLOGY sky130A ;', 'TECHNOLOGY gf180mcuD ;'),
+		)
+		for old, new in def_replacements:
+			if old not in def_text:
+				raise RuntimeError(f'Expected GF180 DEF template token not found: {old}')
+			def_text = def_text.replace(old, new)
+		pathlib.Path(def_template).write_text(def_text)
 
 	# Custom config
 	flow_cfg = {
 		# Main design properties
-		"DESIGN_NAME"    : "openframe_project_wrapper",
+		"DESIGN_NAME"    : design_name,
 		"DESIGN_IS_CORE" : False,
 
 		# Sources
+		"VERILOG_INCLUDE_DIRS" : [ "dir::../../rtl/" ],
 		"VERILOG_FILES": [
-			"dir::openframe_project_wrapper.v",
+			f"dir::{design_name}.v",
 			"dir::../../rtl/tt_top.v",
 			"dir::../../rtl/tt_gpio.v",
 			"dir::../../rtl/tt_user_module.v",
@@ -241,17 +292,23 @@ if __name__ == '__main__':
 		"DIE_AREA"  : [  0.00,  0.00, 3166.63, 4766.63 ],
 		"CORE_AREA" : [ 85.00, 85.00, 3081.63, 4681.63 ],
 		"FP_SIZING" : "absolute",
-		"FP_DEF_TEMPLATE" : "dir::openframe_project_wrapper.def",
-		"FP_TEMPLATE_COPY_POWER_PINS" : True,
 
 		# PDN
 		"VDD_NETS": [ "vdpwr", "vapwr" ],
 		"GND_NETS": [ "vgnd",  "vgnd"  ],
 
 		"PDN_CFG": "dir::pdn.tcl",
-
-		"PDN_CONNECT_MACROS_TO_GRID"    : False,
-		"PDN_ENABLE_GLOBAL_CONNECTIONS" : False,
+		"PDN_CONNECT_MACROS_TO_GRID": True,
+		"PDN_MACRO_CONNECTIONS": [
+			"top_I.*mux_I vdpwr vgnd VDPWR VGND",
+			"top_I.ctrl_I vdpwr vgnd VDPWR VGND",
+			"top_I.*tt_pg_vdd_I vdpwr vgnd VPWR VGND",
+			"top_I.*tt_asw_.* vdpwr vgnd VDPWR VGND",
+			"top_I.*tt_asw_.* vapwr vgnd VAPWR VGND",
+			"top_I.sram_lo_I vdpwr vgnd VPWR VGND",
+			"top_I.sram_hi_I vdpwr vgnd VPWR VGND",
+		],
+		"PDN_ENABLE_GLOBAL_CONNECTIONS": True,
 
 		"FP_PDN_CORE_RING"          : True,
 		"FP_PDN_CORE_RING_VWIDTH"   : 25,
@@ -264,9 +321,8 @@ if __name__ == '__main__':
 		# Routing
 		"GRT_ALLOW_CONGESTION"  : True,
 		"GRT_REPAIR_ANTENNAS"   : False,
-		"GRT_LAYER_ADJUSTMENTS" : [1, 0.95, 0.95, 0, 0, 0],
 		"DRT_ANTENNA_REPAIR_ITERS" : 0,
-		"RT_MAX_LAYER"          : "met4",
+		"RT_MAX_LAYER"          : "Metal4",
 
 		# Magic stream
 		"MAGIC_ZEROIZE_ORIGIN" : False,
@@ -279,6 +335,25 @@ if __name__ == '__main__':
 		"MAGIC_EXT_SHORT_RESISTOR" : True, # Fixes LVS failures when more than two pins are connected to the same net
 		"IGNORE_DISCONNECTED_MODULES": disc_modules,
 	}
+
+	# GF180 exposes the 74 raw pad terminals directly. The SKY130 OpenFrame
+	# DEF template has a different GPIO interface, so place GF180 pins by
+	# their physical pad order instead.
+	if tti.cfg.pdk.name == "gf180mcuD":
+		flow_cfg.update({
+			"FP_DEF_TEMPLATE": "dir::tt_gf_wrapper.def",
+			"FP_TEMPLATE_MATCH_MODE": "permissive",
+			"FP_TEMPLATE_COPY_POWER_PINS": True,
+			"IO_PIN_ORDER_CFG": "dir::gf180_pin_order.cfg",
+			"IO_PIN_H_LAYER": "Metal3",
+			"IO_PIN_V_LAYER": "Metal2",
+			"ERRORS_ON_UNMATCHED_IO": "both",
+		})
+	else:
+		flow_cfg.update({
+			"FP_DEF_TEMPLATE": "dir::openframe_project_wrapper.def",
+			"FP_TEMPLATE_COPY_POWER_PINS": True,
+		})
 
 	# Update PDN config
 	pdn_width   =  8.75

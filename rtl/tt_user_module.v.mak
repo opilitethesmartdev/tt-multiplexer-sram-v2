@@ -11,6 +11,7 @@
  */
 
 `default_nettype none
+`include "tt_defs.vh"
 
 module tt_user_module #(
 	// Logical  Position
@@ -25,8 +26,8 @@ module tt_user_module #(
 	parameter integer N_I    = 10,
 
 	// auto-set
-	parameter integer N_OW = N_O + N_IO * 2 ,
-	parameter integer N_IW = N_I + N_IO
+	parameter integer N_OW = N_O + N_IO * 2 + `TT_SRAM_OW,
+	parameter integer N_IW = N_I + N_IO + `TT_SRAM_IW
 )(
 `ifdef USE_POWER_PINS
 	input  wire VDPWR,
@@ -50,14 +51,27 @@ module tt_user_module #(
 	wire       clk;
 	wire       rst_n;
 
-	assign { uio_in, ui_in, rst_n, clk } = iw;
-	assign ow = { uio_oe, uio_out, uo_out };
+	wire sram_cs;
+	wire sram_we;
+	wire [`TT_SRAM_WMASK-1:0] sram_wmask;
+	wire [`TT_SRAM_ADDR-1:0] sram_addr;
+	wire [`TT_SRAM_DATA-1:0] sram_wdata;
+	wire [`TT_SRAM_DATA-1:0] sram_rdata;
+
+	assign { sram_rdata, uio_in, ui_in, rst_n, clk } = iw;
+	assign ow = { sram_cs, sram_we, sram_wmask, sram_addr, sram_wdata, uio_oe, uio_out, uo_out };
 
 	generate
 		case ({MUX_ID[15:0], BLK_ID[15:0]})
 % for (mux_id, blk_id), mod in grid.items():
 		{ 16'd${mux_id}, 16'd${blk_id} }:
 		begin : block_${mux_id}_${blk_id}
+%  if mod.common_sram:
+			assign {sram_cs, sram_we, sram_wmask, sram_addr, sram_wdata, uio_oe, uio_out, uo_out} = {N_OW{k_zero}};
+%  else:
+%   if not mod.uses_sram:
+			assign {sram_cs, sram_we, sram_wmask, sram_addr, sram_wdata} = {`TT_SRAM_OW{k_zero}};
+%   endif
 `ifdef USE_POWER_PINS
 			wire l_vdpwr;
 			wire l_vapwr;
@@ -79,6 +93,15 @@ module tt_user_module #(
 				.ena     (ena),
 				.clk     (clk),
 				.rst_n   (rst_n)
+%   if mod.uses_sram:
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+%   endif
 			);
 %  if mod.analog:
 %   for (pin_int, pin_ext) in mod.analog.items():
@@ -124,10 +147,11 @@ module tt_user_module #(
 `endif
 %  endif
 		end
+%  endif
 % endfor
 		default: begin
 			// Tie-off
-			assign ow = { N_OW{k_zero} };
+			assign {sram_cs, sram_we, sram_wmask, sram_addr, sram_wdata, uio_oe, uio_out, uo_out} = { N_OW{k_zero} };
 		end
 		endcase
 	endgenerate

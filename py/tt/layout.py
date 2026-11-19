@@ -128,13 +128,21 @@ class Layout:
 		glb.pg_vaa = LayoutNode()
 
 		# Size of the various busses
+		sram = getattr(self.cfg.tt, 'sram', None)
+		sram_ow = (2 + sram.wmask_width + sram.addr_width + sram.data_width) if sram else 0
+		sram_iw = sram.data_width if sram else 0
+
 		self.vspine = ConfigNode({
 			'ow': self.cfg.tt.uio.o + self.cfg.tt.uio.io * 2 + 2,
-			'iw': self.cfg.tt.uio.i + self.cfg.tt.uio.io     + 9 + 1 + 2,
+			'iw': self.cfg.tt.uio.i + self.cfg.tt.uio.io + 9 + 1 + 2,
 		})
-		self.user = ConfigNode({
+		self.user_std = ConfigNode({
 			'ow': self.cfg.tt.uio.o + self.cfg.tt.uio.io * 2,
 			'iw': self.cfg.tt.uio.i + self.cfg.tt.uio.io,
+		})
+		self.user = ConfigNode({
+			'ow': self.cfg.tt.uio.o + self.cfg.tt.uio.io * 2 + sram_ow,
+			'iw': self.cfg.tt.uio.i + self.cfg.tt.uio.io + sram_iw,
 		})
 
 		# Margins
@@ -354,12 +362,36 @@ class Layout:
 			('um_ena',    (n, 1)),
 		]
 
+		# SRAM-capable user macros expose the extra command/data pins.
+		sram = getattr(self.cfg.tt, 'sram', None)
+		if sram:
+			block_ply_sram = [
+				(None,        3), # pg_ena, pg_cscd, k_zero
+				('sram_cs',   1),
+				('sram_we',   1),
+				('sram_wmask', sram.wmask_width),
+				('sram_addr', sram.addr_width),
+				('sram_wdata', sram.data_width),
+				('uio_oe',    self.cfg.tt.uio.io),
+				('uio_out',   self.cfg.tt.uio.io),
+				('uo_out',    self.cfg.tt.uio.o),
+				('sram_rdata', sram.data_width),
+				('uio_in',    self.cfg.tt.uio.io),
+				('ui_in',     self.cfg.tt.uio.i - 2),
+				('rst_n',     None),
+				('clk',       None),
+				('ena',       None),
+			]
+		else:
+			block_ply_sram = block_ply
+
 		# Expand and check consistency
 		block_ply_e = self._ply_expand(block_ply)
-		mux_ply_e   = self._ply_expand(mux_ply(0))
+		block_ply_sram_e = self._ply_expand(block_ply_sram)
+		mux_ply_e = self._ply_expand(mux_ply(0))
 
-		if len(block_ply_e) != len(mux_ply_e):
-			raise RuntimeError('Mux and Block pin layout mismatch !')
+		if len(block_ply_sram_e) != len(mux_ply_e):
+			raise RuntimeError('Mux and SRAM-capable Block pin layout mismatch !')
 
 		# Get tracks
 		tracks_pg = self._ply_distribute(
@@ -380,19 +412,31 @@ class Layout:
 			axis   = 'x',
 		)
 
+		tracks_um_sram = self._ply_distribute(
+			n_pins = len(block_ply_sram_e) - 2,
+			start  = self.glb.pg_vdd.offset + self.glb.pg_vaa.offset + self.glb.margin.x,
+			end    = self.glb.block.width - self.glb.margin.x,
+			step   = 0,
+			layer  = self.cfg.tt.spine.vlayer,
+			axis   = 'x',
+		)
+
 		tracks = tracks_pg + tracks_um
+		tracks_sram = tracks_pg + tracks_um_sram
 
-		# Create pins for user blocks
+		# Create pins for standard and SRAM-capable user blocks
 		self.ply_block = self._ply_finalize(block_ply_e, tracks)
+		self.ply_block_sram = self._ply_finalize(block_ply_sram_e, tracks_sram)
 
-		# Create pins for mux blocks
+		# Create pins for mux blocks. The mux bus is extended for every slot;
+		# non-SRAM modules terminate the extra signals in tt_user_module.
 		mux_tracks  = []
 		mux_ply_bot = []
 		mux_ply_top = []
 
 		for i in range(self.cfg.tt.grid.x // 2):
 			ofs = self.glb.block.pitch * (self.cfg.tt.grid.x // 2 - i - 1)
-			mux_tracks.extend([x+ofs for x in tracks])
+			mux_tracks.extend([x+ofs for x in tracks_sram])
 			mux_ply_bot.extend(self._ply_expand(mux_ply(i*2+1)))
 			mux_ply_top.extend(self._ply_expand(mux_ply(i*2+0)))
 
@@ -408,9 +452,9 @@ class Layout:
 
 		hspine_ply = [
 			('bus_gd',  (3,1)),			# so_gh
-			('bus_ow',  self.user.ow),	# so_usr
+			('bus_ow',  self.user_std.ow),	# so_usr (SRAM is a separate sideband)
 			('bus_gd',  (1,2)),			# so_gl, si_gh
-			('bus_iw',  self.user.iw),	# si_usr
+			('bus_iw',  self.user_std.iw),	# si_usr
 			('bus_gd',  (0,1)),			# si_sel[8]
 			(None,      3),				# si_sel[7:5]
 			('bus_sel', (0,5)),			# si_sel[4:0]
@@ -447,6 +491,26 @@ class Layout:
 		self.ply_mux_bus  = self._ply_finalize(hspine_ply_e, tracks)
 		self.ply_mux_port = self._ply_finalize(vspine_ply_e, tracks)
 
+
+	def sramif_layout(self):
+		# Place the shared SRAM sideband pins separately from the spine pins.
+		sram_ply = [
+			('sram_ow', self.user.ow - self.user_std.ow),
+			('sram_iw', self.user.iw - self.user_std.iw),
+		]
+		sram_ply_e = self._ply_expand(sram_ply)
+		self.ply_mux_sram = {}
+		if sram_ply_e:
+			sram_tracks = self._ply_distribute(
+				n_pins = len(sram_ply_e),
+				start  = self.glb.margin.y,
+				end    = self.glb.mux.height - self.glb.margin.y,
+				step   = 0,
+				layer  = self.cfg.tt.spine.hlayer,
+				axis   = 'y',
+			)
+			self.ply_mux_sram = self._ply_finalize(sram_ply_e, sram_tracks)
+
 	def vspine_layout(self):
 
 		# Pin Layout
@@ -482,6 +546,7 @@ class Layout:
 			( 'ctrl_ena',       None, None ),
 			( 'ctrl_sel_inc',   None, None ),
 			( 'ctrl_sel_rst_n', None, None ),
+			( 'sram_side_sel',  None, None ),
 			( 'k_one',          None, None ),
 			( 'k_zero',         None, None ),
 			( 'i', 2, 8 ),

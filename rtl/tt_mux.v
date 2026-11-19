@@ -17,11 +17,14 @@ module tt_mux #(
 	parameter integer N_I  = `TT_N_I,
 
 	// auto-set
+	parameter integer N_SRAM_OW = `TT_SRAM_OW,
+	parameter integer N_SRAM_IW = `TT_SRAM_IW,
+
 	parameter integer S_OW = N_O + N_IO * 2 + 2,
 	parameter integer S_IW = N_I + N_IO + 9 + 1 + 2,
 
-	parameter integer U_OW = N_O + N_IO * 2,
-	parameter integer U_IW = N_I + N_IO
+	parameter integer U_OW = N_O + N_IO * 2 + N_SRAM_OW,
+	parameter integer U_IW = N_I + N_IO + N_SRAM_IW
 )(
 	// Power
 `ifdef USE_POWER_PINS
@@ -40,6 +43,10 @@ module tt_mux #(
 	output wire [S_OW-1:0] spine_ow,
 	input  wire [S_IW-1:0] spine_iw,
 
+	// Shared SRAM sideband
+	output wire [N_SRAM_OW-1:0] sram_ow,
+	input  wire [N_SRAM_IW-1:0] sram_iw,
+
 	// Config straps
 	input  wire [3:0] addr,
 
@@ -51,29 +58,35 @@ module tt_mux #(
 	// Signals
 	// -------
 
-	// Split spine connections
-	wire            so_gh;
-	wire [U_OW-1:0] so_usr;
-	wire            so_gl;
+	localparam integer U_OW_STD = N_O + N_IO * 2;
+	localparam integer U_IW_STD = N_I + N_IO;
 
-	wire            si_gh;
-	wire [U_IW-1:0] si_usr;
+	// Split spine connections
+	wire                 so_gh;
+	wire [U_OW_STD-1:0]  so_usr;
+	wire                 so_gl;
+
+	wire                 si_gh;
+	wire [U_IW_STD-1:0]  si_usr;
 	wire      [8:0] si_sel;
 	wire            si_ena;
 	wire            si_gl;
 
-	wire [U_OW-1:0] so_usr_pre;
+	wire [U_OW_STD-1:0] so_usr_pre;
 
-	// Horizontal distribution/collection bus
+	// Horizontal distribution/collection bus (standard interface only)
 	wire      [3:0] bus_gd;
-	wire [U_OW-1:0] bus_ow;
-	wire [U_IW-1:0] bus_iw;
+	wire [U_OW_STD-1:0] bus_ow;
+	wire [U_IW_STD-1:0] bus_iw;
 	wire      [4:0] bus_sel;
 	wire            bus_ena;
 
-	// User Module connections as arrays
+	// User module connections as arrays
 	wire [U_OW-1:0] um_owa[0:N_UM-1];
-	wire [U_IW-1:0] um_iwa[0:N_UM-1];
+	wire [U_OW_STD-1:0] um_owa_std[0:N_UM-1];
+	wire [N_SRAM_OW-1:0] um_owa_sram[0:N_UM-1];
+	wire [U_IW_STD-1:0] um_iwa_std[0:N_UM-1];
+	wire [N_SRAM_IW-1:0] um_iwa_sram[0:N_UM-1];
 
 	// Decoding
 	wire            ena;
@@ -155,10 +168,18 @@ module tt_mux #(
 
 	tt_prim_tbuf #(
 		.HIGH_DRIVE(0)
-	) bus_pull_ow_I[U_OW-1:0] (
+	) bus_pull_ow_I[U_OW_STD-1:0] (
 		.a  (tie_zero),
 		.tx (branch_sel_n_tbe),
 		.z  (bus_ow)
+	);
+
+	tt_prim_tbuf #(
+		.HIGH_DRIVE(0)
+	) bus_pull_sram_ow_I[N_SRAM_OW-1:0] (
+		.a  (tie_zero),
+		.tx (branch_sel_n_tbe),
+		.z  (sram_ow)
 	);
 
 	// Spine drive TBUF for Outward
@@ -169,14 +190,14 @@ module tt_mux #(
 
 	tt_prim_buf #(
 		.HIGH_DRIVE(0)
-	) buf_spine_ow_I[U_OW-1:0] (
+	) buf_spine_ow_I[U_OW_STD-1:0] (
 		.a  (bus_ow),
 		.z  (so_usr_pre)
 	);
 
 	tt_prim_tbuf #(
 		.HIGH_DRIVE(1)
-	) tbuf_spine_ow_I[U_OW-1:0] (
+	) tbuf_spine_ow_I[U_OW_STD-1:0] (
 		.a  (so_usr_pre),
 		.tx (branch_sel_tbe),
 		.z  (so_usr)
@@ -185,7 +206,7 @@ module tt_mux #(
 	// (Zeroing) buffer for Inward
 	tt_prim_zbuf #(
 		.HIGH_DRIVE(1)
-	) zbuf_bus_iw_I[U_IW-1:0] (
+	) zbuf_bus_iw_I[U_IW_STD-1:0] (
 		.a  (si_usr),
 		.e  (branch_sel),
 		.z  (bus_iw)
@@ -222,7 +243,8 @@ module tt_mux #(
 		for (i=0; i<N_UM; i=i+1)
 		begin : map
 			assign um_owa[i] = um_ow[U_OW*i+:U_OW];
-			assign um_iw[U_IW*i+:U_IW] = um_iwa[i];
+			assign {um_owa_sram[i], um_owa_std[i]} = um_owa[i];
+			assign um_iw[U_IW*i+:U_IW] = {um_iwa_sram[i], um_iwa_std[i]};
 		end
 	endgenerate
 
@@ -240,7 +262,8 @@ module tt_mux #(
 			if ((i & 3) == 0)
 			begin
 				// Signals
-				wire [U_OW-1:0] l_ow;
+				wire [U_OW_STD-1:0] l_ow;
+				wire [N_SRAM_OW-1:0] l_sram_ow;
 				wire            l_tbe;
 				wire      [1:0] l_sel;
 
@@ -262,12 +285,21 @@ module tt_mux #(
 					.z  (l_sel)
 				);
 
-				tt_prim_mux4 mux4_I[U_OW-1:0] (
-					.a(um_owa[i+0]),
-					.b(um_owa[i+1]),
-					.c(um_owa[i+2]),
-					.d(um_owa[i+3]),
+				tt_prim_mux4 mux4_I[U_OW_STD-1:0] (
+					.a(um_owa_std[i+0]),
+					.b(um_owa_std[i+1]),
+					.c(um_owa_std[i+2]),
+					.d(um_owa_std[i+3]),
 					.x(l_ow),
+					.s(l_sel)
+				);
+
+				tt_prim_mux4 mux4_sram_I[N_SRAM_OW-1:0] (
+					.a(um_owa_sram[i+0]),
+					.b(um_owa_sram[i+1]),
+					.c(um_owa_sram[i+2]),
+					.d(um_owa_sram[i+3]),
+					.x(l_sram_ow),
 					.s(l_sel)
 				);
 
@@ -279,10 +311,18 @@ module tt_mux #(
 
 				tt_prim_tbuf #(
 					.HIGH_DRIVE(1)
-				) tbuf_spine_ow_I[U_OW-1:0] (
+				) tbuf_spine_ow_I[U_OW_STD-1:0] (
 					.a  (l_ow),
 					.tx (l_tbe),
 					.z  (bus_ow)
+				);
+
+				tt_prim_tbuf #(
+					.HIGH_DRIVE(1)
+				) tbuf_sram_ow_I[N_SRAM_OW-1:0] (
+					.a  (l_sram_ow),
+					.tx (l_tbe),
+					.z  (sram_ow)
 				);
 			end
 
@@ -298,10 +338,18 @@ module tt_mux #(
 
 			tt_prim_zbuf #(
 				.HIGH_DRIVE(0)
-			) zbuf_iw_I[U_IW-1:0] (
+			) zbuf_iw_I[U_IW_STD-1:0] (
 				.a  (bus_iw),
 				.e  (l_ena),
-				.z  (um_iwa[i])
+				.z  (um_iwa_std[i])
+			);
+
+			tt_prim_zbuf #(
+				.HIGH_DRIVE(0)
+			) zbuf_sram_iw_I[N_SRAM_IW-1:0] (
+				.a  (sram_iw),
+				.e  (l_ena),
+				.z  (um_iwa_sram[i])
 			);
 
 			tt_prim_buf #(

@@ -41,6 +41,9 @@ module tt_ctrl #(
 	input  wire  [S_OW-1:0] spine_bot_ow,
 	output wire  [S_IW-1:0] spine_bot_iw,
 
+	// Shared SRAM bank-select output
+	output wire sram_side_sel,
+
 	// Control interface
 	input  wire ctrl_sel_rst_n,
 	input  wire ctrl_sel_inc,
@@ -317,6 +320,8 @@ module tt_ctrl #(
 		.a (sel_cnt[5]),
 		.z (side_sel)
 	);
+
+	assign sram_side_sel = side_sel;
 
 	// Side enable signals - Generation
 	tt_prim_inv #(

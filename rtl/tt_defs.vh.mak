@@ -16,6 +16,19 @@
 `define TT_N_O  ${cfg.tt.uio.o}
 `define TT_N_I  ${cfg.tt.uio.i}
 
+<%
+sram = getattr(cfg.tt, 'sram', None)
+sram_addr = sram.addr_width if sram else 0
+sram_data = sram.data_width if sram else 0
+sram_wmask = sram.wmask_width if sram else 0
+sram_ow = sram_addr + sram_data + sram_wmask + 2
+%>
+`define TT_SRAM_ADDR  ${sram_addr}
+`define TT_SRAM_DATA  ${sram_data}
+`define TT_SRAM_WMASK ${sram_wmask}
+`define TT_SRAM_OW    ${sram_ow}
+`define TT_SRAM_IW    ${sram_data}
+
 `define TT_TECH_${cfg.pdk.tech.upper()}
 
 `ifdef TT_TECH_SKY130

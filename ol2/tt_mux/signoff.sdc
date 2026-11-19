@@ -27,6 +27,10 @@ for {set i 13} {$i <= 30} {incr i} {
 	# Outward
 set all_spine_outward [ get_ports spine_ow* ]
 
+# Shared SRAM sideband
+set all_sram_inward  [ get_ports sram_iw* ]
+set all_sram_outward [ get_ports sram_ow* ]
+
 
 # Inputs
 # ------
@@ -37,6 +41,7 @@ set_input_transition 0.1 $all_um_outward
 # Spine not so much
 set_input_transition 1.0 $all_spine_ctl
 set_input_transition 1.0 $all_spine_inward
+set_input_transition 1.0 $all_sram_inward
 
 
 # Loads
@@ -48,6 +53,7 @@ set_load 0.01 $all_um_inward
 
 # Spine is very capacitive. 0.75 pF estimate from tt_top max RCX
 set_load 0.75 $all_spine_outward
+set_load 0.75 $all_sram_outward
 
 
 # Assumptions
@@ -81,3 +87,9 @@ set_max_delay -from $all_spine_inward -to $all_um_inward     2.5
 
 group_path    -from $all_um_outward   -to $all_spine_outward -name io_outward
 set_max_delay -from $all_um_outward   -to $all_spine_outward 7.5
+
+group_path    -from $all_sram_inward  -to $all_um_inward     -name sram_inward
+set_max_delay -from $all_sram_inward  -to $all_um_inward     2.5
+
+group_path    -from $all_um_outward   -to $all_sram_outward  -name sram_outward
+set_max_delay -from $all_um_outward   -to $all_sram_outward  7.5

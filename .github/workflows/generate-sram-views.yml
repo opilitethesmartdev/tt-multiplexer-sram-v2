@@ -1,0 +1,37 @@
+name: generate-sram-views
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install KLayout
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y klayout
+
+      - name: Generate SRAM views
+        working-directory: ol2/tt_top
+        env:
+          PDM_BUILD_SCM_VERSION: "0.0.0"
+        run: |
+          uv sync --project arrakeen_sram --python-preference only-system
+          PYTHONPATH=/usr/lib/klayout/pymod uv run --project arrakeen_sram arrakeen_sram/generate_views.py
+
+      - name: Upload SRAM views
+        uses: actions/upload-artifact@v6
+        with:
+          name: sram-views
+          path: |
+            ol2/tt_top/gds/*.gds
+            ol2/tt_top/lef/*.lef
+            ol2/tt_top/verilog/*.v

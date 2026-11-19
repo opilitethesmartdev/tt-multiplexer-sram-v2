@@ -10,6 +10,8 @@
 #
 
 from collections import namedtuple
+from pathlib import Path
+import re
 
 try:
 	import svgwrite as svg
@@ -25,6 +27,7 @@ __all__ = [
 	'MacroInstance',
 	'PowerSwitch',
 	'AnalogSwitch',
+	'CommonSram',
 	'Block',
 	'Mux',
 	'Branch',
@@ -269,14 +272,35 @@ class AnalogSwitch(LayoutElement):
 		)
 
 
+class CommonSram(LayoutElement):
+
+	mod_name = 'SP6TSRAM256x32'
+	color = 'goldenrod'
+
+	def __init__(self, layout):
+		lef_path = Path(__file__).resolve().parents[2] / 'ol2' / 'tt_top' / 'lef' / f'{self.mod_name}.lef'
+		if not lef_path.is_file():
+			raise RuntimeError(f"Missing generated SRAM LEF: {lef_path}")
+
+		lef = lef_path.read_text()
+		match = re.search(r'\bSIZE\s+([0-9]+(?:\.[0-9]+)?)\s+BY\s+([0-9]+(?:\.[0-9]+)?)\s*;', lef, re.IGNORECASE)
+		if match is None:
+			raise RuntimeError(f"Could not read macro dimensions from {lef_path}")
+
+		width = round(float(match.group(1)) * 1000)
+		height = round(float(match.group(2)) * 1000)
+		super().__init__(layout, width, height)
+
+
 class Block(LayoutElement):
 
-	def __init__(self, layout, mod_name=None, mw=1, mh=1, pg_vdd=False, pg_vaa=False, analog=False):
+	def __init__(self, layout, mod_name=None, mw=1, mh=1, pg_vdd=False, pg_vaa=False, analog=False, uses_sram=False):
 
 		# Save options
 		self.pg_vdd = pg_vdd
 		self.pg_vaa = pg_vaa
 		self.analog = analog
+		self.uses_sram = uses_sram
 
 		# Compute module actual width / height
 		width = (
@@ -319,7 +343,8 @@ class Block(LayoutElement):
 			pin_ofs += self.layout.glb.pg_vaa.offset
 
 		# Render pins
-		for pn, pp in self.layout.ply_block.items():
+		pins = self.layout.ply_block_sram if self.uses_sram else self.layout.ply_block
+		for pn, pp in pins.items():
 			# Apply offset
 			pp -= pin_ofs
 
@@ -418,14 +443,16 @@ class Branch(LayoutElement):
 			if mp is None:
 				continue
 
-			# Block instance
+			# Block instance. The common SRAM reserves a large-module slot but
+			# is instantiated as a separate top-level macro, not as a user module.
 			block = Block(layout,
-				mod_name = f'tt_um_{mp.name:s}',
+				mod_name = None if mp.common_sram else f'tt_um_{mp.name:s}',
 				mw = mp.width,
 				mh = mp.height,
 				pg_vdd = mp.pg_vdd_module is not None,
 				pg_vaa = mp.pg_vaa_module is not None,
 				analog = mp.analog,
+				uses_sram = mp.uses_sram,
 			)
 
 			# Block lower left corner position
@@ -438,6 +465,34 @@ class Branch(LayoutElement):
 
 			# Name prefix
 			name_pfx = f'block[{blk_id:d}].um_I.block_{mux_id:d}_{blk_id:d}.'
+
+			# The common SRAM occupies this reserved 4x4 slot.
+			if mp.common_sram:
+				sram_lo = CommonSram(layout)
+				sram_hi = CommonSram(layout)
+				gap = layout.glb.margin.y
+				total_height = sram_lo.height + sram_hi.height + gap
+				if sram_lo.width > block.width or total_height > block.height:
+					raise RuntimeError(
+						f"Two Arrakeen 256x32 banks ({sram_lo.width}x{sram_lo.height} each) "
+						f"do not fit reserved slot ({block.width}x{block.height})"
+					)
+				pos_x = blk_x + (block.width - sram_lo.width) // 2
+				pos_y = blk_y + (block.height - total_height) // 2
+				orient = 'N' if (blk_id & 1) else 'FS'
+				self.add_child(
+					sram_lo,
+					Point(pos_x, pos_y),
+					orient,
+					name=name_pfx+'sram_lo_I'
+				)
+				self.add_child(
+					sram_hi,
+					Point(pos_x, pos_y + sram_lo.height + gap),
+					orient,
+					name=name_pfx+'sram_hi_I'
+				)
+				continue
 
 			# Analog ?
 			if mp.analog:
@@ -627,6 +682,20 @@ class Top(LayoutElement):
 
 		# Add Logos
 		self.process_logos(layout)
+
+	def get_sub_macros(self):
+		macros = super().get_sub_macros()
+		# The SRAM is a direct instance in tt_top.v; keep its physical
+		# position from the reserved slot but use the RTL instance name.
+		return [
+			m._replace(inst_name='sram_lo_I') if (
+				m.mod_name == 'SP6TSRAM256x32' and m.inst_name.endswith('sram_lo_I')
+			) else
+			m._replace(inst_name='sram_hi_I') if (
+				m.mod_name == 'SP6TSRAM256x32' and m.inst_name.endswith('sram_hi_I')
+			) else m
+			for m in macros
+		]
 
 	def process_logos(self, layout):
 
