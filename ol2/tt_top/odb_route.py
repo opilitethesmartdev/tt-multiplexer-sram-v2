@@ -37,7 +37,7 @@ class Router:
 
 		self.layer_h = tech.findLayer('Metal3')
 		self.layer_v = tech.findLayer('Metal4')
-		self.via     = tech.findVia('M3M4_PR')
+		self.via     = ViaGenerator(reader, 'M3M4_PR').get(1, 1)
 
 		self.x_spine = []
 		self.y_muxes = {}
@@ -101,7 +101,7 @@ class Router:
 
 			encoder.newPath(self.layer_v, 'FIXED')
 			encoder.addPoint(x_spine, y)
-			encoder.addTechVia(self.via)
+			encoder.addVia(self.via)
 
 		encoder.end()
 
@@ -172,8 +172,8 @@ class Router:
 		# Vias
 		tech = self.reader.db.getTech()
 
-		via_m23 = tech.findVia('M2M3_PR')
-		via_m34 = tech.findVia('M3M4_PR')
+		via_m23 = ViaGenerator(self.reader, 'M2M3_PR')
+		via_m34 = ViaGenerator(self.reader, 'M3M4_PR')
 
 		# Find controller instance
 		ctrl_inst = self.reader.block.findInst('top_I.ctrl_I')
@@ -229,9 +229,9 @@ class Router:
 				# Toggle routing direction
 				xy ^= True
 
-				# Add via
-				if vt is not None:
-					encoder.addTechVia(vt)
+			# Add via
+			if vt is not None:
+				encoder.addVia(vt.get(1, 1))
 
 			# Encoder end
 			encoder.end()
@@ -412,8 +412,8 @@ class Router:
 		tech = self.reader.db.getTech()
 
 		via = {
-			('Metal2', 'Metal3'): tech.findVia('M2M3_PR'),
-			('Metal3', 'Metal4'): tech.findVia('M3M4_PR'),
+			('Metal2', 'Metal3'): ViaGenerator(self.reader, 'M2M3_PR'),
+			('Metal3', 'Metal4'): ViaGenerator(self.reader, 'M3M4_PR'),
 		}
 
 		# Scan all BTerm to find gpio_loopback_{zero,one}[]
@@ -483,7 +483,7 @@ class Router:
 					encoder.newPath(bterm_ly, 'FIXED')
 					encoder.addPoint(px, py)
 					encoder.addPoint(trk, py)
-					encoder.addTechVia(via[(bterm_ly.getName(), self.layer_v.getName())])
+					encoder.addVia(via[(bterm_ly.getName(), self.layer_v.getName())].get(1, 1))
 
 			elif side in ['bot', 'top']:
 				# Horizontal segment
@@ -496,7 +496,7 @@ class Router:
 					encoder.newPath(bterm_ly, 'FIXED')
 					encoder.addPoint(px, py)
 					encoder.addPoint(px, trk)
-					encoder.addTechVia(via[(bterm_ly.getName(), self.layer_h.getName())])
+					encoder.addVia(via[(bterm_ly.getName(), self.layer_h.getName())].get(1, 1))
 
 			# Encoder end
 			encoder.end()
@@ -506,8 +506,8 @@ class Router:
 		tech = self.reader.db.getTech()
 
 		via = {
-			('Metal2', 'Metal3'): tech.findVia('M2M3_PR'),
-			('Metal3', 'Metal4'): tech.findVia('M3M4_PR'),
+			('Metal2', 'Metal3'): ViaGenerator(self.reader, 'M2M3_PR'),
+			('Metal3', 'Metal4'): ViaGenerator(self.reader, 'M3M4_PR'),
 		}
 
 		# Get full die area
@@ -558,15 +558,15 @@ class Router:
 			encoder.newPath(self.layer_v, 'FIXED')
 			encoder.addPoint(x, y)
 			encoder.addPoint(x, ly[0])
-			encoder.addTechVia(self.via)
+			encoder.addVia(self.via)
 			encoder.addPoint(lx[1], ly[0])
-			encoder.addTechVia(self.via)
+			encoder.addVia(self.via)
 			encoder.addPoint(lx[1], ly[1])
-			encoder.addTechVia(self.via)
+			encoder.addVia(self.via)
 			encoder.addPoint(lx[0], ly[1])
-			encoder.addTechVia(self.via)
+			encoder.addVia(self.via)
 			encoder.addPoint(lx[0], ly[0])
-			encoder.addTechVia(self.via)
+			encoder.addVia(self.via)
 			encoder.addPoint(x, ly[0])
 
 			# Iterate over all BTerms
@@ -587,19 +587,19 @@ class Router:
 				# Check side
 				if pad_bb.yMin() < 0:				# Bottom
 					encoder.addPoint(px, ly[0])
-					encoder.addTechVia(via[(pad_ly.getName(), self.layer_h.getName())])
+					encoder.addVia(via[(pad_ly.getName(), self.layer_h.getName())].get(1, 1))
 
 				elif pad_bb.yMax() > die.yMax():	# Top
 					encoder.addPoint(px, ly[1])
-					encoder.addTechVia(via[(pad_ly.getName(), self.layer_h.getName())])
+					encoder.addVia(via[(pad_ly.getName(), self.layer_h.getName())].get(1, 1))
 
 				elif pad_bb.xMin() < 0:				# Left
 					encoder.addPoint(lx[0], py)
-					encoder.addTechVia(via[(pad_ly.getName(), self.layer_v.getName())])
+					encoder.addVia(via[(pad_ly.getName(), self.layer_v.getName())].get(1, 1))
 
 				elif pad_bb.xMax() > die.xMax():	# Right
 					encoder.addPoint(lx[1], py)
-					encoder.addTechVia(via[(pad_ly.getName(), self.layer_v.getName())])
+					encoder.addVia(via[(pad_ly.getName(), self.layer_v.getName())].get(1, 1))
 
 				else:
 					# ?!?!?
@@ -1198,7 +1198,7 @@ class AnalogRouter:
 		tech = self.reader.db.getTech()
 		self.layer_bot = tech.findLayer('Metal3')
 		self.layer_top = tech.findLayer('Metal4')
-		self.via_sig   = tech.findVia('M3M4_PR')
+		self.via_sig   = ViaGenerator(reader, 'M3M4_PR')
 
 		# Create via for analog signal
 		viagen = ViaGenerator(self.reader, 'M3M4_PR')
@@ -1704,7 +1704,7 @@ class AnalogRouter:
 			encoder.addPoint(xp0, yl0[1])
 			encoder.addPoint(xp1, yl0[1])
 			encoder.addPoint(xp1, yp1)
-			encoder.addTechVia(self.via_sig)
+			encoder.addVia(self.via_sig.get(1, 1))
 			encoder.addPoint(xp2, yp1)
 
 			for x in xl2:
