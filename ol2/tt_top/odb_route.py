@@ -1217,7 +1217,7 @@ class AnalogRouter:
 		tech = self.reader.db.getTech()
 		self.layer_bot = tech.findLayer('Metal3')
 		self.layer_top = tech.findLayer('Metal4')
-		self.via_sig   = ViaGenerator(reader, 'Via3_GEN_HH')
+		self.via_sig   = ViaGenerator(self.reader, 'Via3_GEN_HH')
 
 		# Create via for analog signal
 		viagen = ViaGenerator(self.reader, 'Via3_GEN_HH')
