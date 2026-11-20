@@ -1734,6 +1734,11 @@ class AnalogRouter:
 			encoder.end()
 
 	def run(self):
+		# GF180 has no analog switches; the Sky130-authored route_data.yaml
+		# analog entries do not exist in this design, so skip the whole
+		# analog router when no analog switch is present.
+		if not self.asw:
+			return
 		self.asw_power()
 		self.asw_bus()
 		self.asw_mod()
