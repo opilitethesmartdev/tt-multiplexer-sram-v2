@@ -185,10 +185,16 @@ class Router:
 		for port_name, rpts in data.items():
 			# Starting point
 			it = ctrl_inst.findITerm(port_name)
+			if it is None:
+				print(f"DBG route_pad: {port_name} -> findITerm None", flush=True)
+				continue
 			sx, sy = it.getAvgXY()[1:]
 
 			# Net
 			net = it.getNet()
+			if net is None:
+				print(f"DBG route_pad: {port_name} -> net None", flush=True)
+				continue
 
 			# Ending point. In GF180 the controller's output pads (and their
 			# output enables) pass through a tristate buffer in tt_gf_wrapper,
@@ -196,12 +202,16 @@ class Router:
 			# nets are left for the detail router.
 			bt = net.get1stBTerm()
 			if bt is None:
+				print(f"DBG route_pad: {port_name} net={net.getName()} -> bt None", flush=True)
 				continue
 			ex, ey = bt.getFirstPinLocation()[1:]
 			el = bt.getBPins()[0].getBoxes()[0].getTechLayer()
 
 			# Wire
 			wire = odb.dbWire.create(net)
+			if wire is None:
+				print(f"DBG route_pad: {port_name} net={net.getName()} sigtype={net.getSigType()} -> wire None", flush=True)
+				continue
 
 			# Set via type for intermediate routing points
 			rpts = [(v, via_m34) for v in rpts]
