@@ -37,7 +37,7 @@ class Router:
 
 		self.layer_h = tech.findLayer('Metal3')
 		self.layer_v = tech.findLayer('Metal4')
-		self.via     = ViaGenerator(reader, 'M3M4_PR').get(1, 1)
+		self.via     = ViaGenerator(reader, 'Via3_GEN_HH').get(1, 1)
 
 		self.x_spine = []
 		self.y_muxes = {}
@@ -172,8 +172,8 @@ class Router:
 		# Vias
 		tech = self.reader.db.getTech()
 
-		via_m23 = ViaGenerator(self.reader, 'M2M3_PR')
-		via_m34 = ViaGenerator(self.reader, 'M3M4_PR')
+		via_m23 = ViaGenerator(self.reader, 'Via2_GEN_HH')
+		via_m34 = ViaGenerator(self.reader, 'Via3_GEN_HH')
 
 		# Find controller instance
 		ctrl_inst = self.reader.block.findInst('top_I.ctrl_I')
@@ -239,7 +239,7 @@ class Router:
 	def route_um_tieoffs(self):
 		# Get track info
 		# We route horizontally on met4, non-preferred direction ...
-		track_cfg = self.tti.cfg.pdk.tracks.met4.y
+		track_cfg = self.tti.cfg.pdk.tracks.Metal4.y
 
 		def track_align(v):
 			return track_cfg.offset + ((v - track_cfg.offset) // track_cfg.pitch) * track_cfg.pitch
@@ -377,8 +377,8 @@ class Router:
 			}
 
 		# Track config
-		cfg_tv = self.tti.cfg.pdk.tracks.met4.x
-		cfg_th = self.tti.cfg.pdk.tracks.met3.y
+		cfg_tv = self.tti.cfg.pdk.tracks.Metal4.x
+		cfg_th = self.tti.cfg.pdk.tracks.Metal3.y
 
 		# Alignement function
 		def a(cfg, v):
@@ -412,8 +412,8 @@ class Router:
 		tech = self.reader.db.getTech()
 
 		via = {
-			('Metal2', 'Metal3'): ViaGenerator(self.reader, 'M2M3_PR'),
-			('Metal3', 'Metal4'): ViaGenerator(self.reader, 'M3M4_PR'),
+			('Metal2', 'Metal3'): ViaGenerator(self.reader, 'Via2_GEN_HH'),
+			('Metal3', 'Metal4'): ViaGenerator(self.reader, 'Via3_GEN_HH'),
 		}
 
 		# Scan all BTerm to find gpio_loopback_{zero,one}[]
@@ -506,8 +506,8 @@ class Router:
 		tech = self.reader.db.getTech()
 
 		via = {
-			('Metal2', 'Metal3'): ViaGenerator(self.reader, 'M2M3_PR'),
-			('Metal3', 'Metal4'): ViaGenerator(self.reader, 'M3M4_PR'),
+			('Metal2', 'Metal3'): ViaGenerator(self.reader, 'Via2_GEN_HH'),
+			('Metal3', 'Metal4'): ViaGenerator(self.reader, 'Via3_GEN_HH'),
 		}
 
 		# Get full die area
@@ -620,8 +620,8 @@ class Router:
 		layer_v = tech.findLayer('Metal4')
 		layer_h = tech.findLayer('Metal3')
 
-		cfg_v = self.tti.cfg.pdk.tracks.met4.x
-		cfg_h = self.tti.cfg.pdk.tracks.met3.y
+		cfg_v = self.tti.cfg.pdk.tracks.Metal4.x
+		cfg_h = self.tti.cfg.pdk.tracks.Metal3.y
 
 		die = self.reader.block.getDieArea()
 
@@ -820,7 +820,7 @@ class ModulePowerStrapper:
 		# Find useful data
 		tech = reader.db.getTech()
 
-		self.vg = ViaGenerator(self.reader, 'M4M5_PR')
+		self.vg = ViaGenerator(self.reader, 'Via4_GEN_HH')
 		self.layer = tech.findLayer('Metal5')
 
 		self.stripe_space, self.stripe_width = self._find_stripe_space_width()
@@ -1039,7 +1039,7 @@ class RingPowerStrapper:
 		self.tech = tech = reader.db.getTech()
 
 		self.layer = tech.findLayer('Metal3')
-		self.viagen = ViaGenerator(reader, 'M3M4_PR_C')
+		self.viagen = ViaGenerator(reader, 'Via3_GEN_HH')
 
 	def find_ring_for_net(self, net):
 		# Find all the boxes on met4
@@ -1198,14 +1198,14 @@ class AnalogRouter:
 		tech = self.reader.db.getTech()
 		self.layer_bot = tech.findLayer('Metal3')
 		self.layer_top = tech.findLayer('Metal4')
-		self.via_sig   = ViaGenerator(reader, 'M3M4_PR')
+		self.via_sig   = ViaGenerator(reader, 'Via3_GEN_HH')
 
 		# Create via for analog signal
-		viagen = ViaGenerator(self.reader, 'M3M4_PR')
+		viagen = ViaGenerator(self.reader, 'Via3_GEN_HH')
 		self.via = viagen.create(3, 3, 'analog_via')
 
 		# Create via generator for power
-		self.pwr_vg = ViaGenerator(self.reader, 'M4M5_PR')
+		self.pwr_vg = ViaGenerator(self.reader, 'Via4_GEN_HH')
 
 		# Create non-default rule
 		self.ndr = ndr = odb.dbTechNonDefaultRule_create(self.reader.block, 'analog_track')
