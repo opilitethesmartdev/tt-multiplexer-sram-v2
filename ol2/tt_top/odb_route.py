@@ -187,14 +187,21 @@ class Router:
 			it = ctrl_inst.findITerm(port_name)
 			sx, sy = it.getAvgXY()[1:]
 
-			# Net / Wire
+			# Net
 			net = it.getNet()
-			wire = odb.dbWire.create(net)
 
-			# Ending point
+			# Ending point. In GF180 the controller's output pads (and their
+			# output enables) pass through a tristate buffer in tt_gf_wrapper,
+			# so the controller ITerm's net has no direct pad BTerm. Those
+			# nets are left for the detail router.
 			bt = net.get1stBTerm()
+			if bt is None:
+				continue
 			ex, ey = bt.getFirstPinLocation()[1:]
 			el = bt.getBPins()[0].getBoxes()[0].getTechLayer()
+
+			# Wire
+			wire = odb.dbWire.create(net)
 
 			# Set via type for intermediate routing points
 			rpts = [(v, via_m34) for v in rpts]
