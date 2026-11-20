@@ -186,23 +186,21 @@ class Router:
 			# Starting point
 			it = ctrl_inst.findITerm(port_name)
 			if it is None:
-				print(f"DBG route_pad: {port_name} -> findITerm None", flush=True)
 				continue
 			sx, sy = it.getAvgXY()[1:]
 
 			# Net
 			net = it.getNet()
 			if net is None:
-				print(f"DBG route_pad: {port_name} -> net None", flush=True)
 				continue
 
 			# Ending point. In GF180 the controller's output pads (and their
 			# output enables) pass through a tristate buffer in tt_gf_wrapper,
-			# so the controller ITerm's net has no direct pad BTerm. Those
-			# nets are left for the detail router.
+			# so the controller ITerm's net has no direct pad BTerm. The
+			# inout pad_raw nets are also un-writable by dbWire.create, so
+			# both cases are left for the detail router.
 			bt = net.get1stBTerm()
 			if bt is None:
-				print(f"DBG route_pad: {port_name} net={net.getName()} -> bt None", flush=True)
 				continue
 			ex, ey = bt.getFirstPinLocation()[1:]
 			el = bt.getBPins()[0].getBoxes()[0].getTechLayer()
@@ -210,7 +208,6 @@ class Router:
 			# Wire
 			wire = odb.dbWire.create(net)
 			if wire is None:
-				print(f"DBG route_pad: {port_name} net={net.getName()} sigtype={net.getSigType()} -> wire None", flush=True)
 				continue
 
 			# Set via type for intermediate routing points
@@ -1076,12 +1073,18 @@ class RingPowerStrapper:
 		if len(boxes) == 0:
 			return None
 
+		# GF180's PDN ring is generated differently from SKY130's; it may not
+		# have exactly four RING boxes on each power net. Skip those nets
+		# rather than aborting the flow.
 		if len(boxes) != 4:
-			raise RuntimeError(f'Unexpected boxes for net {net.getName():s}')
+			return None
 
 		# Sort and return
 		boxes_ver = sorted([b for b in boxes if b.getDX() < b.getDY()], key=lambda x:x.xMin())
 		boxes_hor = sorted([b for b in boxes if b.getDX() > b.getDY()], key=lambda x:x.yMin())
+
+		if len(boxes_ver) != 2 or len(boxes_hor) != 2:
+			return None
 
 		return {
 			'l': boxes_ver[0],
@@ -1749,40 +1752,27 @@ def route(
 
 	# Create router
 	r = Router(reader, tti)
-	print("DBG route_vspine", flush=True)
 	r.route_vspine()
-	print("DBG create_spine_obs", flush=True)
 	r.create_spine_obs()
-	print("DBG create_macro_obs", flush=True)
 	r.create_macro_obs()
-	print("DBG route_k01_global", flush=True)
 	r.route_k01_global()
-	print("DBG route_k01_gpio", flush=True)
 	r.route_k01_gpio()
-	print("DBG create_k01_obs", flush=True)
 	r.create_k01_obs()
-	print("DBG route_pad", flush=True)
 	r.route_pad()
-	print("DBG route_um_tieoffs", flush=True)
 	r.route_um_tieoffs()
-	print("DBG route_um_signals", flush=True)
 	r.route_um_signals()
 
 	# Create the module power straps
-	print("DBG ModulePowerStrapper", flush=True)
 	p = ModulePowerStrapper(reader, tti)
 	p.run()
 
 	# Create the ring power straps
-	print("DBG RingPowerStrapper", flush=True)
 	p = RingPowerStrapper(reader)
 	p.run()
 
 	# Analog router
-	print("DBG AnalogRouter", flush=True)
 	a = AnalogRouter(reader, tti)
 	a.run()
-	print("DBG done", flush=True)
 
 if __name__ == "__main__":
 	route()
