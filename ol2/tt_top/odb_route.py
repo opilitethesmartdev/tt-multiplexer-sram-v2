@@ -293,16 +293,15 @@ class Router:
 				it_pos = [ it.getAvgXY()[1:] for it in k0_net.getITerms() ]
 				it_pos.sort()
 
+				# Horizontal strap spanning all ITerms
 				encoder.newPath(layer, 'FIXED')
+				encoder.addPoint(min([px for px, py in it_pos]), sy)
+				encoder.addPoint(max([px for px, py in it_pos]), sy)
 
-				for n, (px, py) in enumerate(it_pos):
-					if n == 0:
-						encoder.addPoint(px, py)
-						encoder.addPoint(px, sy)
-						continue
-					elif n > 1:
-						encoder.newPath(j)
-					j = encoder.addPoint(px, sy)
+				# Vertical segment from the strap down to each ITerm
+				for px, py in it_pos:
+					encoder.newPath(layer, 'FIXED')
+					encoder.addPoint(px, sy)
 					encoder.addPoint(px, py)
 
 				# End routing
