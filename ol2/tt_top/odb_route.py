@@ -1739,27 +1739,40 @@ def route(
 
 	# Create router
 	r = Router(reader, tti)
+	print("DBG route_vspine", flush=True)
 	r.route_vspine()
+	print("DBG create_spine_obs", flush=True)
 	r.create_spine_obs()
+	print("DBG create_macro_obs", flush=True)
 	r.create_macro_obs()
+	print("DBG route_k01_global", flush=True)
 	r.route_k01_global()
+	print("DBG route_k01_gpio", flush=True)
 	r.route_k01_gpio()
+	print("DBG create_k01_obs", flush=True)
 	r.create_k01_obs()
+	print("DBG route_pad", flush=True)
 	r.route_pad()
+	print("DBG route_um_tieoffs", flush=True)
 	r.route_um_tieoffs()
+	print("DBG route_um_signals", flush=True)
 	r.route_um_signals()
 
 	# Create the module power straps
+	print("DBG ModulePowerStrapper", flush=True)
 	p = ModulePowerStrapper(reader, tti)
 	p.run()
 
 	# Create the ring power straps
+	print("DBG RingPowerStrapper", flush=True)
 	p = RingPowerStrapper(reader)
 	p.run()
 
 	# Analog router
+	print("DBG AnalogRouter", flush=True)
 	a = AnalogRouter(reader, tti)
 	a.run()
+	print("DBG done", flush=True)
 
 if __name__ == "__main__":
 	route()
