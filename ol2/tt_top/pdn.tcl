@@ -38,23 +38,17 @@ foreach vdd $::env(VDD_NETS) gnd $::env(GND_NETS) {
 set_voltage_domain -name CORE -power $::env(VDD_NET) -ground $::env(GND_NET) \
     -secondary_power $secondary
 
-# Met5 horizontal stripes and the matching Metal4 vertical straps. Both are
-# needed: the horizontal stripes alone are only tied together by the core
-# ring, and the ring gets snipped wherever a macro power pin of the opposite
-# net sits on it, leaving whole stripes unconnected (PDNSim PSM-0069).
+# Met5 horizontal stripes.
+#
+# There is deliberately no vertical Metal4 stripe here. Each branch row holds
+# two muxes side by side that span almost the whole core width (86.8..3079.5),
+# so a Metal4 strap is snipped into fragments at every branch row and cannot
+# tie anything together. The macro power pins are on Metal4 and connect up to
+# these Metal5 stripes through the macro grid below.
 define_pdn_grid \
     -name stdcell_grid \
     -starts_with POWER \
     -voltage_domain CORE
-
-add_pdn_stripe \
-    -grid stdcell_grid \
-    -layer $::env(FP_PDN_VERTICAL_LAYER) \
-    -width $::env(FP_PDN_VWIDTH) \
-    -pitch $::env(FP_PDN_VPITCH) \
-    -offset $::env(FP_PDN_VOFFSET) \
-    -spacing $::env(FP_PDN_VSPACING) \
-    -starts_with POWER -extend_to_core_ring
 
 add_pdn_stripe \
     -grid stdcell_grid \
@@ -68,21 +62,6 @@ add_pdn_stripe \
 add_pdn_connect \
     -grid stdcell_grid \
     -layers "$::env(FP_PDN_VERTICAL_LAYER) $::env(FP_PDN_HORIZONTAL_LAYER)"
-
-# Standard cell rails. Without these the cells' VDD/VSS pins are only joined
-# by `set_global_connections`, i.e. logically and not physically: LVS then
-# extracts every cell's power pin as its own net (_323_/VDD, _369_/VSS, ...)
-# and the netlists do not match. Same pattern as ol2/tt_ctrl/pdn.tcl.
-add_pdn_stripe \
-    -grid stdcell_grid \
-    -layer $::env(FP_PDN_RAIL_LAYER) \
-    -width $::env(FP_PDN_RAIL_WIDTH) \
-    -followpins \
-    -starts_with POWER
-
-add_pdn_connect \
-    -grid stdcell_grid \
-    -layers "$::env(FP_PDN_RAIL_LAYER) $::env(FP_PDN_VERTICAL_LAYER)"
 
 # Add the core ring
 # `-connect_to_pads` ties the ring to the wrapper's power pins. Those pins sit

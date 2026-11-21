@@ -160,14 +160,21 @@ class Layout:
 		avail_width -= self.cfg.pdk.die.margin.right
 
 			# Reserve space for Spine tracks and IO pad tracks
-			# (we keep those tracks twice as far as they strictly need
-			#  to be to decrease mutual capacitance)
+			# (we keep those tracks further apart than they strictly need to
+			#  be, to decrease mutual capacitance)
 		vti = self.cfg.pdk.tracks[self.cfg.tt.spine.vlayer]
 
 		vspine_tracks = self.vspine.iw + self.vspine.ow
 		iopads_tracks = self.cfg.tt.uio.o + self.cfg.tt.uio.i + 3 * self.cfg.tt.uio.io + 2
 
-		rsvd_width = 2 * vti.x.pitch * (vspine_tracks + iopads_tracks)
+			# The factor is a per-PDK trade-off: a larger value keeps the
+			# spine tracks apart (less capacitance) but narrows every block
+			# column. On GF180MCU a 2x reservation leaves each column 342.12um
+			# while the standard user tile is 346.64um wide, so the hardened
+			# user macros overflow their slot into the neighbours.
+		track_space = self.cfg.tt.spine.get('track_space', 2)
+
+		rsvd_width = track_space * vti.x.pitch * (vspine_tracks + iopads_tracks)
 		rsvd_width = self._align_x(rsvd_width, ceil=True)
 
 			# Remaining size is for the blocks and margin

@@ -422,22 +422,11 @@ if __name__ == '__main__':
 		grid = 0.005
 		return round(x / grid) * grid
 
-	# The vertical straps tie the horizontal ones into a mesh. Without them the
-	# horizontal stripes are only joined by the core ring, and the ring is
-	# snipped wherever a macro's power pin of the opposite net sits on it,
-	# which leaves whole stripes as islands (PDNSim reports them unconnected).
-	pdn_vpitch = 2 * pdn_pitch
-	pdn_voffset = pdn_pitch / 2
-
 	flow_cfg.update({
 		"FP_PDN_HWIDTH"  : pdn_align(pdn_width),
 		"FP_PDN_HSPACING": pdn_align(pdn_spacing),
 		"FP_PDN_HPITCH"  : pdn_align(pdn_pitch),
 		"FP_PDN_HOFFSET" : pdn_align(pdn_offset),
-		"FP_PDN_VWIDTH"  : pdn_align(pdn_width),
-		"FP_PDN_VSPACING": pdn_align(pdn_spacing),
-		"FP_PDN_VPITCH"  : pdn_align(pdn_vpitch),
-		"FP_PDN_VOFFSET" : pdn_align(pdn_voffset),
 	})
 
 	# Run flow

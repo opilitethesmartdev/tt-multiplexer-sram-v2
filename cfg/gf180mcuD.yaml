@@ -98,6 +98,11 @@ tt:
   spine:
     vlayer: 'Metal4'
     hlayer: 'Metal3'
+    # Spine/IO track reservation multiplier. The GF180 user tile is 346.64um
+    # wide (619 site columns) and each block column must reserve the power
+    # gate plus margins on top of that, which only fits if the spine tracks
+    # are spaced 1.3x rather than the SKY130 default of 2x.
+    track_space: 1.3
   analog:
     - mux_id: [ 10 ]
       pins:
