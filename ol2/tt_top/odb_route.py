@@ -1123,11 +1123,19 @@ class StdCellPower:
 
 		self.riser_w = max(2 * self.riser_ly.getWidth(), 1)
 
-		# Row grouping for the rails
-		block_rows = list(reader.block.getRows())
-		self.row_h = block_rows[0].getSite().getHeight() if block_rows else 1
-		if not self.row_h:
-			self.row_h = 1
+		# Magic streams GDS on a 5nm grid (CIF scale 0.005um) while KLayout uses
+		# 1nm, so any edge we place off that grid XORs as a 1nm sliver. Snap
+		# everything we draw to it.
+		self.snap = max(reader.block.getDbUnitsPerMicron() // 200, 1)
+
+		# Row grouping for the rails: use the spacing between the DEF rows.
+		origins = sorted({row.getOrigin().y() for row in reader.block.getRows()})
+		if len(origins) >= 2:
+			self.row_pitch = min(b - a for a, b in zip(origins, origins[1:]) if b > a)
+			self.row_base = origins[0]
+		else:
+			self.row_pitch = 1
+			self.row_base = 0
 
 		self.macros = [
 			inst.getBBox()
@@ -1137,6 +1145,12 @@ class StdCellPower:
 
 	def _align(self, v):
 		return (v // self.grid) * self.grid
+
+	def _snap_lo(self, v):
+		return (v // self.snap) * self.snap
+
+	def _snap_hi(self, v):
+		return -((-v) // self.snap) * self.snap
 
 	def _path_blocked(self, x, y0, y1):
 		# Would a Metal4 riser from y0 to y1 at x pass through a macro ?
@@ -1176,7 +1190,7 @@ class StdCellPower:
 					if hasattr(layer, 'getName') and layer.getName() != 'Metal1':
 						continue
 					yc = (r.yMin() + r.yMax()) // 2
-					key = (net.getName(), yc // self.row_h)
+					key = (net.getName(), (yc - self.row_base) // self.row_pitch)
 					item = rows.setdefault(key, [[], r.yMin(), r.yMax()])
 					item[0].append((r.xMin(), r.xMax()))
 					item[1] = min(item[1], r.yMin())
@@ -1224,13 +1238,17 @@ class StdCellPower:
 
 			for x0, x1 in runs:
 				sw = odb.dbSWire.create(net, "ROUTED")
-				odb.createSBoxes(sw, self.rail_ly,
-					[odb.Rect(x0, y0, x1, y1)], "STRIPE")
+				odb.createSBoxes(sw, self.rail_ly, [
+					odb.Rect(
+						self._snap_lo(x0), self._snap_lo(y0),
+						self._snap_hi(x1), self._snap_hi(y1),
+					)
+				], "STRIPE")
 				n_rails += 1
 
 				# Riser to the closest stripe of the same net that is not
 				# separated from the rail by a macro
-				x = self._align((x0 + x1) // 2)
+				x = self._snap_lo((x0 + x1) // 2)
 				riser = None
 				for yt in sorted(stripes[net_name], key=lambda y: abs(y - yc)):
 					if not self._path_blocked(x, min(yc, yt), max(yc, yt)):
@@ -1241,16 +1259,18 @@ class StdCellPower:
 					n_skipped += 1
 					continue
 
+				yvia = self._snap_lo(yc)
+				yriser = self._snap_hi(riser)
 				sw = odb.dbSWire.create(net, "ROUTED")
 				odb.createSBoxes(sw, self.riser_ly, [
 					odb.Rect(
-						x - self.riser_w // 2, min(yc, riser),
-						x + self.riser_w // 2, max(yc, riser),
+						x - self.riser_w // 2, min(yvia, yriser),
+						x + self.riser_w // 2, max(yvia, yriser),
 					)
 				], "STRIPE")
 				for vg in (self.v12, self.v23, self.v34):
-					odb.createSBoxes(sw, vg.get(1, 1), [odb.Point(x, yc)], "STRIPE")
-				odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, riser)], "STRIPE")
+					odb.createSBoxes(sw, vg.get(1, 1), [odb.Point(x, yvia)], "STRIPE")
+				odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, yriser)], "STRIPE")
 				n_risers += 1
 
 		print(f'StdCellPower: {n_rails} rails, {n_risers} risers, {n_skipped} without a path')
