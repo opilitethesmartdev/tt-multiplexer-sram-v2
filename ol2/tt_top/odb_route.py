@@ -1082,6 +1082,166 @@ class ModulePowerStrapper:
 					self._draw_stripe(sw, yp, yw, xl, xr, pd)
 
 
+class StdCellPower:
+
+	"""Tie the top-level standard cells to the Metal5 power stripes.
+
+	The tt_top glue logic sits in the macro-free bands between the branch
+	rows, where Metal4 is free. A core-wide rail grid cannot be used here:
+	pdngen's -followpins walks every row of the core, and a row inside a
+	branch row has no legal vertical path up, because the two muxes of that
+	row own Metal2/Metal3/Metal4 across almost the whole core width. pdngen
+	gives up on those unconnectable rails with:
+
+	  [PDN-0179] Unable to repair all channels.
+
+	Without rails the cells are attached to the supplies only through
+	set_global_connections, which is a purely logical connection. LVS then
+	extracts every cell's power pin as its own net (_323_/VDD, _369_/VSS, ...)
+	so the netlists do not match, and in silicon the logic would simply be
+	unpowered.
+
+	So draw the rails here instead, one per row of cells, and give each rail a
+	Metal4 riser up to the nearest Metal5 stripe of the same net.
+	"""
+
+	NETS = ('vdpwr', 'vgnd')
+
+	def __init__(self, reader):
+		self.reader = reader
+
+		tech = reader.db.getTech()
+		self.grid = tech.getManufacturingGrid()
+
+		self.rail_ly = tech.findLayer('Metal1')
+		self.riser_ly = tech.findLayer('Metal4')
+
+		self.v12 = ViaGenerator(reader, 'Via1_GEN_HH')
+		self.v23 = ViaGenerator(reader, 'Via2_GEN_HH')
+		self.v34 = ViaGenerator(reader, 'Via3_GEN_HH')
+		self.v45 = ViaGenerator(reader, 'Via4_GEN_HH')
+
+		self.riser_w = max(2 * self.riser_ly.getWidth(), 1)
+
+		self.macros = [
+			inst.getBBox()
+				for inst in reader.block.getInsts()
+					if not inst.getMaster().getName().startswith('gf180mcu_fd_sc_')
+		]
+
+	def _align(self, v):
+		return (v // self.grid) * self.grid
+
+	def _path_blocked(self, x, y0, y1):
+		# Would a Metal4 riser from y0 to y1 at x pass through a macro ?
+		for bb in self.macros:
+			if bb.xMin() <= x <= bb.xMax():
+				if (y1 > bb.yMin()) and (y0 < bb.yMax()):
+					return True
+		return False
+
+	def _stripes(self, net):
+		ys = set()
+		for sw in net.getSWires():
+			for w in sw.getWires():
+				if w.isVia():
+					continue
+				if w.getTechLayer().getName() != 'Metal5':
+					continue
+				ys.add((w.yMin() + w.yMax()) // 2)
+		return sorted(ys)
+
+	def _runs(self):
+		# Collect the cells' Metal1 power pin shapes, grouped per net and rail
+		rows = {}
+		for inst in self.reader.block.getInsts():
+			if not inst.getMaster().getName().startswith('gf180mcu_fd_sc_'):
+				continue
+			for it in inst.getITerms():
+				net = it.getNet()
+				if net is None:
+					continue
+				if net.getName() not in self.NETS:
+					continue
+				for geom in it.getGeometries():
+					layer, r = geom[0], geom[1]
+					if hasattr(layer, 'getName') and layer.getName() != 'Metal1':
+						continue
+					rows.setdefault((net.getName(), r.yMin(), r.yMax()), []).append(
+						(r.xMin(), r.xMax())
+					)
+		return rows
+
+	def run(self):
+		stripes = {}
+		for net_name in self.NETS:
+			net = self.reader.block.findNet(net_name)
+			if net is not None:
+				stripes[net_name] = self._stripes(net)
+
+		if not any(stripes.values()):
+			print('StdCellPower: no Metal5 power stripes found, skipping')
+			return
+
+		rows = self._runs()
+		if not rows:
+			print('StdCellPower: no standard cell power pins found, skipping')
+			return
+
+		n_rails = 0
+		n_risers = 0
+		n_skipped = 0
+
+		for (net_name, y0, y1) in sorted(rows):
+			net = self.reader.block.findNet(net_name)
+			yc = (y0 + y1) // 2
+
+			# Merge touching pin shapes into one rail
+			spans = sorted(rows[(net_name, y0, y1)])
+			runs = []
+			cx0, cx1 = spans[0]
+			for x0, x1 in spans[1:]:
+				if x0 <= (cx1 + 2 * self.grid):
+					cx1 = max(cx1, x1)
+				else:
+					runs.append((cx0, cx1))
+					cx0, cx1 = x0, x1
+			runs.append((cx0, cx1))
+
+			for x0, x1 in runs:
+				sw = odb.dbSWire.create(net, "ROUTED")
+				odb.createSBoxes(sw, self.rail_ly,
+					[odb.Rect(x0, y0, x1, y1)], "STRIPE")
+				n_rails += 1
+
+				# Riser to the closest stripe of the same net that is not
+				# separated from the rail by a macro
+				x = self._align((x0 + x1) // 2)
+				riser = None
+				for yt in sorted(stripes[net_name], key=lambda y: abs(y - yc)):
+					if not self._path_blocked(x, min(yc, yt), max(yc, yt)):
+						riser = yt
+						break
+
+				if riser is None:
+					n_skipped += 1
+					continue
+
+				sw = odb.dbSWire.create(net, "ROUTED")
+				odb.createSBoxes(sw, self.riser_ly, [
+					odb.Rect(
+						x - self.riser_w // 2, min(yc, riser),
+						x + self.riser_w // 2, max(yc, riser),
+					)
+				], "STRIPE")
+				for vg in (self.v12, self.v23, self.v34):
+					odb.createSBoxes(sw, vg.get(1, 1), [odb.Point(x, yc)], "STRIPE")
+				odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, riser)], "STRIPE")
+				n_risers += 1
+
+		print(f'StdCellPower: {n_rails} rails, {n_risers} risers, {n_skipped} without a path')
+
+
 class RingPowerStrapper:
 
 	def __init__(self, reader):
@@ -1809,6 +1969,10 @@ def route(
 
 	# Create the module power straps
 	p = ModulePowerStrapper(reader, tti)
+	p.run()
+
+	# Power the top level standard cells
+	p = StdCellPower(reader)
 	p.run()
 
 	# Create the ring power straps
