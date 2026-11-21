@@ -169,9 +169,9 @@ class Layout:
 
 			# The factor is a per-PDK trade-off: a larger value keeps the
 			# spine tracks apart (less capacitance) but narrows every block
-			# column. On GF180MCU a 2x reservation leaves each column 342.12um
-			# while the standard user tile is 346.64um wide, so the hardened
-			# user macros overflow their slot into the neighbours.
+			# column. 2x is what the spine pin/track lists are built for, so
+			# it should not be reduced; the block columns are sized to fit
+			# the user tile by the PDK die margin instead.
 		track_space = self.cfg.tt.spine.get('track_space', 2)
 
 		rsvd_width = track_space * vti.x.pitch * (vspine_tracks + iopads_tracks)

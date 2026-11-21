@@ -319,7 +319,10 @@ if __name__ == '__main__':
 
 		# Floorplanning
 		"DIE_AREA"  : [  0.00,  0.00, 3166.63, 4766.63 ],
-		"CORE_AREA" : [ 85.00, 85.00, 3081.63, 4681.63 ],
+		# X matches the GF180 die margin (cfg/gf180mcuD.yaml); the layout has
+		# to fit full user tiles plus power gates into the eight block
+		# columns, which the SKY130 85um margin does not allow.
+		"CORE_AREA" : [ 62.00, 85.00, 3104.63, 4681.63 ],
 		"FP_SIZING" : "absolute",
 
 		# PDN
