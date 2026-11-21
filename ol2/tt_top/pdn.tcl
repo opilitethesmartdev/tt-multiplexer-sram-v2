@@ -38,11 +38,23 @@ foreach vdd $::env(VDD_NETS) gnd $::env(GND_NETS) {
 set_voltage_domain -name CORE -power $::env(VDD_NET) -ground $::env(GND_NET) \
     -secondary_power $secondary
 
-# Met5 horizontal stripes
+# Met5 horizontal stripes and the matching Metal4 vertical straps. Both are
+# needed: the horizontal stripes alone are only tied together by the core
+# ring, and the ring gets snipped wherever a macro power pin of the opposite
+# net sits on it, leaving whole stripes unconnected (PDNSim PSM-0069).
 define_pdn_grid \
     -name stdcell_grid \
     -starts_with POWER \
     -voltage_domain CORE
+
+add_pdn_stripe \
+    -grid stdcell_grid \
+    -layer $::env(FP_PDN_VERTICAL_LAYER) \
+    -width $::env(FP_PDN_VWIDTH) \
+    -pitch $::env(FP_PDN_VPITCH) \
+    -offset $::env(FP_PDN_VOFFSET) \
+    -spacing $::env(FP_PDN_VSPACING) \
+    -starts_with POWER -extend_to_core_ring
 
 add_pdn_stripe \
     -grid stdcell_grid \
