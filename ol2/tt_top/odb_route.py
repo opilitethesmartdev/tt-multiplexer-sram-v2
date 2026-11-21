@@ -25,6 +25,15 @@ def getOtherITermsOnNet(it):
 	return [x for x in it.getNet().getITerms() if x.this != it.this]
 
 
+# Master name prefixes of the PDK standard cell libraries. These cells are
+# fully described by their LEF and are handled by the placer/router directly.
+STDCELL_PREFIXES = (
+	'gf180mcu_fd_sc_',
+	'sky130_fd_sc_',
+	'sg13g2_',
+)
+
+
 class Router:
 
 	def __init__(self, reader, tti):
@@ -164,15 +173,26 @@ class Router:
 		mx = self._dbu(self.tti.layout.glb.margin.x)
 		my = self._dbu(self.tti.layout.glb.margin.y)
 
-		# Iterate over all macros
+		# Iterate over all hard macros
 		for inst in self.reader.instances:
+			master_name = inst.getMaster().getName()
+
 			# The Arrakeen SRAM macros already declare Metal1-3 obstructions
 			# in their LEF and expose all their signal/power pins on Metal3.
 			# Blocking their whole footprint (in particular Metal4/Metal5)
 			# leaves the detailed router no way to escape those pins, so it
 			# ends up routing on Metal2/Metal3 inside the macro and shorting
 			# against the macro obstructions.
-			if inst.getMaster().getName().startswith('SP6TSRAM'):
+			if master_name.startswith('SP6TSRAM'):
+				continue
+
+			# Standard cells describe their complete geometry in their LEF,
+			# so they must stay routable. Blanketing them removes every
+			# routing resource over the glue logic, which leaves the router
+			# no legal path between those cells: it then routes into the
+			# obstructions and reports thousands of Short violations
+			# against them.
+			if master_name.startswith(STDCELL_PREFIXES):
 				continue
 
 			bb = inst.getBBox()
