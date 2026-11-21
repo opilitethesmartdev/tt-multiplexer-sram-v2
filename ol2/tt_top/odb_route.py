@@ -847,7 +847,7 @@ class ModulePowerStrapper:
 		self.layer = tech.findLayer('Metal5')
 
 		self.stripe_space, self.stripe_width = self._find_stripe_space_width()
-		self.space = 2250
+		self.space = 2250 * reader.block.getDbUnitsPerMicron() // 1000
 		self.grid = tech.getManufacturingGrid()
 
 	def _grid_align(self, v):
