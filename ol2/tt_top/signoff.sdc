@@ -94,16 +94,30 @@ create_clock -name ctrl_inc -period 10 [ get_ports "gpio_in[39]" ]
 set_input_delay  0 [all_inputs]
 set_output_delay 0 [all_outputs]
 
+# Drop objects that do not exist. On GF180MCU the wrapper exposes
+# `pad_raw[]` instead of the SKY130 `gpio_in[]`/`gpio_out[]` ports, and a
+# `get_ports`/`get_pins` that matches nothing still yields an empty element
+# for every `lappend`, so these lists are non-empty but contain only empty
+# strings. OpenSTA aborts the whole SDC when `group_path` receives them.
+proc tt_objects {objs} {
+	set out [list]
+	foreach o $objs {
+		if {[string length $o] > 0} {
+			lappend out $o
+		}
+	}
+	return $out
+}
+
 # Apply a path group + max delay, skipping it when either end is empty.
-# On GF180MCU the wrapper exposes `pad_raw[]` instead of the SKY130
-# `gpio_in[]`/`gpio_out[]` ports, so most of these sets resolve empty, and
-# OpenSTA aborts the whole SDC when `group_path` gets an empty -from/-to.
 proc tt_group_path {name frm to delay} {
-	if {[llength $frm] == 0 || [llength $to] == 0} {
+	set from [tt_objects $frm]
+	set to   [tt_objects $to]
+	if {[llength $from] == 0 || [llength $to] == 0} {
 		return
 	}
-	group_path    -from $frm -to $to -name $name
-	set_max_delay -from $frm -to $to $delay
+	group_path    -from $from -to $to -name $name
+	set_max_delay -from $from -to $to $delay
 }
 
 # Control delays
