@@ -161,11 +161,21 @@ class Router:
 					self.tti.cfg.pdk.tracks._cfg.keys()
 		]
 
+		mx = self._dbu(self.tti.layout.glb.margin.x)
+		my = self._dbu(self.tti.layout.glb.margin.y)
+
 		# Iterate over all macros
 		for inst in self.reader.instances:
+			# The Arrakeen SRAM macros already declare Metal1-3 obstructions
+			# in their LEF and expose all their signal/power pins on Metal3.
+			# Blocking their whole footprint (in particular Metal4/Metal5)
+			# leaves the detailed router no way to escape those pins, so it
+			# ends up routing on Metal2/Metal3 inside the macro and shorting
+			# against the macro obstructions.
+			if inst.getMaster().getName().startswith('SP6TSRAM'):
+				continue
+
 			bb = inst.getBBox()
-			mx = self._dbu(self.tti.layout.glb.margin.x)
-			my = self._dbu(self.tti.layout.glb.margin.y)
 			for l in layers:
 				odb.dbObstruction_create(self.reader.block,
 					l,
