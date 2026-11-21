@@ -50,8 +50,15 @@ set all_pins_um_ow  [ get_pins "*.tt_um_I/buf_out*/X" ]
 # Inputs
 # ------
 
-# All `io_in` come from strong buffer in the gpio_control_block
-set_driving_cell -lib_cell sky130_fd_sc_hd__buf_16 -pin X [all_inputs]
+# All `io_in` come from strong buffer in the gpio_control_block.
+# The driving cell is PDK specific: the SKY130 library uses `buf_16` with
+# `A`/`X` pins, GF180MCU uses `buf_8` with `I`/`Z` pins. Try each in turn
+# rather than keying off the PDK name, so this stays valid for any library.
+if {[catch {
+	set_driving_cell -lib_cell gf180mcu_fd_sc_mcu7t5v0__buf_8 -pin Z [all_inputs]
+} _drv_err]} {
+	set_driving_cell -lib_cell sky130_fd_sc_hd__buf_16 -pin X [all_inputs]
+}
 
 
 # Loads
