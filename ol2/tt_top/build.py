@@ -333,6 +333,11 @@ if __name__ == '__main__':
 		"GRT_ALLOW_CONGESTION"  : True,
 		"GRT_REPAIR_ANTENNAS"   : False,
 		"DRT_ANTENNA_REPAIR_ITERS" : 0,
+		# The default cap is 64 iterations, which takes ~4h on this design
+		# when the router cannot converge. A healthy run terminates on its
+		# own once there are no violations left, so cap the failure case to
+		# keep CI iteration time bounded.
+		"DRT_OPT_ITERS"         : 16,
 		"RT_MAX_LAYER"          : "Metal4",
 
 		# Magic stream
