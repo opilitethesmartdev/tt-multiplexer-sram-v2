@@ -107,11 +107,16 @@ add_pdn_connect \
     -grid sram_macros \
     -layers "$::env(FP_PDN_VERTICAL_LAYER) Metal3"
 
+# The straps must land on the vdd/vss strips, which start at x=35.65um inside
+# the macro, and must stay clear of the a[] pins that run along the left edge
+# (x 0..2.98um). An offset of 0.68 put a Metal4 strap right on top of those
+# pins: signal vias from the pins shorted into it (DRT reported
+# "Short net:_105_ net:vdpwr" on Metal4 at the macro edge).
 add_pdn_stripe \
     -grid sram_macros \
     -layer Metal4 \
     -width 1.36 \
-    -offset 0.68 \
+    -offset 40 \
     -spacing 0.28 \
     -pitch 284.16 \
     -starts_with POWER \
