@@ -31,11 +31,17 @@ def power(
 	PDN = {
 		'vgnd' : {
 			'type' :  'GROUND',
-			'pins' : [ 'VGND' ],
+			# GF180MCU names the digital ground pin VSS (the SKY130
+			# flows use VGND).
+			'pins' : [ 'VGND', 'VSS' ],
 		},
 		'vdpwr' : {
 			'type' : 'POWER',
-			'pins' : [ 'VPWR', 'VDPWR' ],
+			# GF180MCU names the digital power pin VDD (the SKY130
+			# flows use VPWR). The GF180 hardened user macros (like
+			# the chip ROM) expose VDD/VSS, so they must be wired
+			# through the power gate like any other user module.
+			'pins' : [ 'VPWR', 'VDPWR', 'VDD' ],
 			'pg' : ( 'tt_pg_vdd_I', 'VPWR', 'GPWR' ),
 		},
 		'vapwr' : {
