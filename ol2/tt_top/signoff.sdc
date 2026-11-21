@@ -94,19 +94,23 @@ create_clock -name ctrl_inc -period 10 [ get_ports "gpio_in[39]" ]
 set_input_delay  0 [all_inputs]
 set_output_delay 0 [all_outputs]
 
+# Apply a path group + max delay, skipping it when either end is empty.
+# On GF180MCU the wrapper exposes `pad_raw[]` instead of the SKY130
+# `gpio_in[]`/`gpio_out[]` ports, so most of these sets resolve empty, and
+# OpenSTA aborts the whole SDC when `group_path` gets an empty -from/-to.
+proc tt_group_path {name frm to delay} {
+	if {[llength $frm] == 0 || [llength $to] == 0} {
+		return
+	}
+	group_path    -from $frm -to $to -name $name
+	set_max_delay -from $frm -to $to $delay
+}
+
 # Control delays
-group_path    -from $all_ctl -to $all_pins_um_ctl -name ctl_to_ctl
-set_max_delay -from $all_ctl -to $all_pins_um_ctl 15.0
-
-group_path    -from $all_ctl -to $all_pins_um_iw  -name ctl_to_inward
-set_max_delay -from $all_ctl -to $all_pins_um_iw  15.0
-
-group_path    -from $all_ctl -to $all_pads_out    -name ctl_to_outward
-set_max_delay -from $all_ctl -to $all_pads_out    30.0
+tt_group_path ctl_to_ctl     $all_ctl        $all_pins_um_ctl 15.0
+tt_group_path ctl_to_inward  $all_ctl        $all_pins_um_iw  15.0
+tt_group_path ctl_to_outward $all_ctl        $all_pads_out    30.0
 
 # User IO
-group_path    -from $all_pads_in    -to $all_pins_um_iw  -name io_inward
-set_max_delay -from $all_pads_in    -to $all_pins_um_iw  5.0
-
-group_path    -from $all_pins_um_ow -to $all_pads_out    -name io_outward
-set_max_delay -from $all_pins_um_ow -to $all_pads_out    12.5
+tt_group_path io_inward      $all_pads_in    $all_pins_um_iw   5.0
+tt_group_path io_outward     $all_pins_um_ow $all_pads_out    12.5
