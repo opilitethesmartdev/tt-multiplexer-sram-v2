@@ -1129,7 +1129,11 @@ class StdCellPower:
 		self.snap = max(reader.block.getDbUnitsPerMicron() // 200, 1)
 
 		# Row grouping for the rails: use the spacing between the DEF rows.
-		origins = sorted({row.getOrigin().y() for row in reader.block.getRows()})
+		origins = set()
+		for row in reader.block.getRows():
+			origin = row.getOrigin()
+			origins.add(origin.y() if hasattr(origin, 'y') else origin[1])
+		origins = sorted(origins)
 		if len(origins) >= 2:
 			self.row_pitch = min(b - a for a, b in zip(origins, origins[1:]) if b > a)
 			self.row_base = origins[0]
