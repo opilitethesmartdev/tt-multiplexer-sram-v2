@@ -42,6 +42,11 @@ class Router:
 		self.x_spine = []
 		self.y_muxes = {}
 
+	def _dbu(self, v):
+		# Convert a nanometre value from the layout config to OpenDB
+		# database units (GF180 uses 2000 dbu/µm, SKY130 1000).
+		return int(v) * self.reader.block.getDbUnitsPerMicron() // 1000
+
 	def route_vspine_net(self, net):
 		# Find extents as well as Y mux pos and X spine pos
 		x_min   = None
@@ -159,13 +164,15 @@ class Router:
 		# Iterate over all macros
 		for inst in self.reader.instances:
 			bb = inst.getBBox()
+			mx = self._dbu(self.tti.layout.glb.margin.x)
+			my = self._dbu(self.tti.layout.glb.margin.y)
 			for l in layers:
 				odb.dbObstruction_create(self.reader.block,
 					l,
-					bb.xMin() + self.tti.layout.glb.margin.x,
-					bb.yMin() + self.tti.layout.glb.margin.y,
-					bb.xMax() - self.tti.layout.glb.margin.x,
-					bb.yMax() - self.tti.layout.glb.margin.y,
+					bb.xMin() + mx,
+					bb.yMin() + my,
+					bb.xMax() - mx,
+					bb.yMax() - my,
 				)
 
 	def route_pad(self):
@@ -254,9 +261,12 @@ class Router:
 		# Get track info
 		# We route horizontally on met4, non-preferred direction ...
 		track_cfg = self.tti.cfg.pdk.tracks.Metal4.y
+		track_offset = self._dbu(track_cfg.offset)
+		track_pitch  = self._dbu(track_cfg.pitch)
+		track_width  = self._dbu(track_cfg.width)
 
 		def track_align(v):
-			return track_cfg.offset + ((v - track_cfg.offset) // track_cfg.pitch) * track_cfg.pitch
+			return track_offset + ((v - track_offset) // track_pitch) * track_pitch
 
 		# Scan all the muxes
 		for inst in self.reader.instances:
@@ -286,9 +296,9 @@ class Router:
 				sy = k0_it.getAvgXY()[2]
 
 				if sy > inst_y_mid:
-					sy = track_align(inst_bbox.yMax() + track_cfg.width + track_cfg.pitch - 1)
+					sy = track_align(inst_bbox.yMax() + track_width + track_pitch - 1)
 				else:
-					sy = track_align(inst_bbox.yMin() - track_cfg.width)
+					sy = track_align(inst_bbox.yMin() - track_width)
 
 				# Start custom routing
 				wire = odb.dbWire.create(k0_net)

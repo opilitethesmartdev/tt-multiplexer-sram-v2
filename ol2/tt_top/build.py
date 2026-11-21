@@ -259,8 +259,8 @@ if __name__ == '__main__':
 	pdn_macro_connections = [
 		"top_I.*mux_I vdpwr vgnd VDPWR VGND",
 		"top_I.ctrl_I vdpwr vgnd VDPWR VGND",
-		"top_I.sram_lo_I vdpwr vgnd VPWR VGND",
-		"top_I.sram_hi_I vdpwr vgnd VPWR VGND",
+		"top_I.sram_lo_I vdpwr vgnd vdd vss",
+		"top_I.sram_hi_I vdpwr vgnd vdd vss",
 	]
 	macro_instances = set()
 	for md in macros.values():
