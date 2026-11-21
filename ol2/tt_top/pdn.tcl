@@ -70,12 +70,17 @@ add_pdn_connect \
     -layers "$::env(FP_PDN_VERTICAL_LAYER) $::env(FP_PDN_HORIZONTAL_LAYER)"
 
 # Add the core ring
+# `-connect_to_pads` ties the ring to the wrapper's power pins. Those pins sit
+# on Metal3 at the die edge, while the ring is on Metal4/Metal5 and is snipped
+# at exactly the pin locations, so without this the grid has no supply source
+# at all and PDNSim reports the whole net as unconnected.
 add_pdn_ring \
     -grid stdcell_grid \
     -layers "$::env(FP_PDN_VERTICAL_LAYER) $::env(FP_PDN_HORIZONTAL_LAYER)" \
     -widths "$::env(FP_PDN_CORE_RING_VWIDTH) $::env(FP_PDN_CORE_RING_HWIDTH)" \
     -spacings "$::env(FP_PDN_CORE_RING_VSPACING) $::env(FP_PDN_CORE_RING_HSPACING)" \
-    -core_offset "$::env(FP_PDN_CORE_RING_VOFFSET) $::env(FP_PDN_CORE_RING_HOFFSET)"
+    -core_offset "$::env(FP_PDN_CORE_RING_VOFFSET) $::env(FP_PDN_CORE_RING_HOFFSET)" \
+    -connect_to_pads -connect_to_pad_layers Metal3
 
 # Macro connections
 define_pdn_grid \
