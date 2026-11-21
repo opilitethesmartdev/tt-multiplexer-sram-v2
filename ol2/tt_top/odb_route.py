@@ -1123,6 +1123,12 @@ class StdCellPower:
 
 		self.riser_w = max(2 * self.riser_ly.getWidth(), 1)
 
+		# Row grouping for the rails
+		block_rows = list(reader.block.getRows())
+		self.row_h = block_rows[0].getSite().getHeight() if block_rows else 1
+		if not self.row_h:
+			self.row_h = 1
+
 		self.macros = [
 			inst.getBBox()
 				for inst in reader.block.getInsts()
@@ -1152,7 +1158,9 @@ class StdCellPower:
 		return sorted(ys)
 
 	def _runs(self):
-		# Collect the cells' Metal1 power pin shapes, grouped per net and rail
+		# Collect the cells' Metal1 power pin shapes, grouped per net and per
+		# site row. The pins of a cell row are collinear, and merging per row
+		# keeps the rail count (and therefore the riser/via count) small.
 		rows = {}
 		for inst in self.reader.block.getInsts():
 			if not inst.getMaster().getName().startswith('gf180mcu_fd_sc_'):
@@ -1167,9 +1175,12 @@ class StdCellPower:
 					layer, r = geom[0], geom[1]
 					if hasattr(layer, 'getName') and layer.getName() != 'Metal1':
 						continue
-					rows.setdefault((net.getName(), r.yMin(), r.yMax()), []).append(
-						(r.xMin(), r.xMax())
-					)
+					yc = (r.yMin() + r.yMax()) // 2
+					key = (net.getName(), yc // self.row_h)
+					item = rows.setdefault(key, [[], r.yMin(), r.yMax()])
+					item[0].append((r.xMin(), r.xMax()))
+					item[1] = min(item[1], r.yMin())
+					item[2] = max(item[2], r.yMax())
 		return rows
 
 	def run(self):
@@ -1192,12 +1203,15 @@ class StdCellPower:
 		n_risers = 0
 		n_skipped = 0
 
-		for (net_name, y0, y1) in sorted(rows):
+		for key in sorted(rows):
+			spans, y0, y1 = rows[key]
+			net_name = key[0]
+
 			net = self.reader.block.findNet(net_name)
 			yc = (y0 + y1) // 2
 
 			# Merge touching pin shapes into one rail
-			spans = sorted(rows[(net_name, y0, y1)])
+			spans = sorted(spans)
 			runs = []
 			cx0, cx1 = spans[0]
 			for x0, x1 in spans[1:]:
