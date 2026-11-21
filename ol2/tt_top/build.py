@@ -335,8 +335,14 @@ if __name__ == '__main__':
 		"PDN_ENABLE_GLOBAL_CONNECTIONS": True,
 
 		"FP_PDN_CORE_RING"          : True,
-		"FP_PDN_CORE_RING_VWIDTH"   : 25,
-		"FP_PDN_CORE_RING_HWIDTH"   : 25,
+		# The ring is built at the core boundary and needs roughly 3x its width
+		# of outward space (power ring + spacing + ground ring). With the X die
+		# margin at 62um (see cfg/gf180mcuD.yaml, needed so the block columns
+		# fit a full user tile) the 25um ring no longer fits inside the die:
+		#   [PDN-0351] PDN rings do not fit inside the die area by 16.84um in X
+		# 12um still carries far more than a TT block draws.
+		"FP_PDN_CORE_RING_VWIDTH"   : 12,
+		"FP_PDN_CORE_RING_HWIDTH"   : 12,
 		"FP_PDN_CORE_RING_VOFFSET"  :  0,
 		"FP_PDN_CORE_RING_HOFFSET"  :  0,
 		"FP_PDN_CORE_RING_VSPACING" :  2.0,
