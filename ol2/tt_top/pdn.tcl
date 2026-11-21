@@ -69,6 +69,21 @@ add_pdn_connect \
     -grid stdcell_grid \
     -layers "$::env(FP_PDN_VERTICAL_LAYER) $::env(FP_PDN_HORIZONTAL_LAYER)"
 
+# Standard cell rails. Without these the cells' VDD/VSS pins are only joined
+# by `set_global_connections`, i.e. logically and not physically: LVS then
+# extracts every cell's power pin as its own net (_323_/VDD, _369_/VSS, ...)
+# and the netlists do not match. Same pattern as ol2/tt_ctrl/pdn.tcl.
+add_pdn_stripe \
+    -grid stdcell_grid \
+    -layer $::env(FP_PDN_RAIL_LAYER) \
+    -width $::env(FP_PDN_RAIL_WIDTH) \
+    -followpins \
+    -starts_with POWER
+
+add_pdn_connect \
+    -grid stdcell_grid \
+    -layers "$::env(FP_PDN_RAIL_LAYER) $::env(FP_PDN_VERTICAL_LAYER)"
+
 # Add the core ring
 # `-connect_to_pads` ties the ring to the wrapper's power pins. Those pins sit
 # on Metal3 at the die edge, while the ring is on Metal4/Metal5 and is snipped
