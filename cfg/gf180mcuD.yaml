@@ -167,11 +167,18 @@ tt:
         align: 'bottom'
         anchor: 'top_level.bottom'
         offset: 3920
+    # The two corner logos are the only decorative macros that would sit on the
+    # core power grid: the vdpwr/vgnd core ring bars run up to y=4598 and the
+    # logos start at y=4520/4576 in the top corners, and every one of these
+    # macros is a solid Metal1..Metal5 block with no pins. A ring bar crossing
+    # one is a dead short (it tied vapwr to vgnd in extraction). They are moved
+    # into the free part of the top margin, clear of the ring bars (x<56 and
+    # x>3110) and of the pad straps (y>4745).
     tt_logo_corner_tl:
       width: 164000
       height: 164000
       x:
-        offset: 26000
+        offset: 2000000
       y:
         anchor: 'die.top'
         align: 'top'
@@ -180,9 +187,7 @@ tt:
       width: 220000
       height: 220000
       x:
-        anchor: 'die.right'
-        align: 'right'
-        offset: -26000
+        offset: 2250000
       y:
         anchor: 'die.top'
         align: 'top'

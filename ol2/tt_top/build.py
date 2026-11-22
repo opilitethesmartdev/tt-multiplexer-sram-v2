@@ -132,25 +132,90 @@ def fix_power_pins(text):
 
 @Step.factory.register()
 class MergeWellNets(Step):
-	"""Tie the extracted well nets to vdpwr.
+	"""Repair the extracted netlist before LVS.
 
-	The standard cells expose VNW/VPW pins because the PDK SPICE models have
-	them, but the LEF-level (abstract) extractor has no geometry for them:
-	Magic warns "Couldn't find label VNW" and the wells come out as separate
-	geometry-only nets (`_NNN_/VNW`), which netgen cannot match against the
-	single vdpwr net of the netlist. Physically the wells are tied to the
-	supplies by the filltie tap cells inserted next to the logic (see
-	WellTaps in odb_route.py).
+	Two things are fixed here, both artefacts of how Magic builds the
+	hierarchical LVS netlist:
 
-	Merge those nets in the extracted layout netlist before LVS. Only
-	instance-line net tokens are touched; the `.subckt` pin lists are not.
+	1. Well nets. The standard cells expose VNW/VPW pins because the PDK
+	SPICE models have them, but the LEF-level (abstract) extractor has no
+	geometry for the well tie: Magic warns "Couldn't find label VNW" and the
+	wells come out as geometry-only nets (`_NNN_/VNW`), which netgen cannot
+	match against the single vdpwr net of the netlist. Physically the wells
+	are tied to the supplies by the filltie tap cells inserted next to the
+	logic (see WellTaps in odb_route.py).
+
+	2. Duplicate pad ports. The wrapper's power/ground pins each have several
+	DEF PORTs (one per pad-ring contact point). Magic creates one *port* per
+	PORT, so a pin that is contacted in several places becomes several
+	top-level ports; because the ports of one pin are not connected to each
+	other inside the wrapper (the pad ring that joins them is in the parent),
+	`extract unique` gives the copies names like `vssio_uq0`, and the layout
+	pin list no longer matches the netlist (114 vs 88), which makes netgen
+	report "Top level cell failed pin matching" and merge nets to compensate.
+	Collapsing those copies back to the base pin name restores one port per
+	pin; they are duplicate connection points of the same pin by definition.
 	"""
 
 	id = "TT.Top.MergeWellNets"
-	name = "Tie extracted well nets to vdpwr"
+	name = "Repair extracted netlist (wells, duplicate pad ports)"
 
 	inputs = [DesignFormat.SPICE]
 	outputs = [DesignFormat.SPICE]
+
+	# `name_uq0`, `name_uq1`, ... as created by `extract unique`
+	UQ = re.compile(r'^(.*)_uq\d+$')
+
+	def _collapse_ports(self, text, design):
+		lines = text.splitlines(keepends=True)
+
+		start = None
+		for i, line in enumerate(lines):
+			if re.match(r'\.subckt\s+' + re.escape(design) + r'(\s|$)', line):
+				start = i
+				break
+		if start is None:
+			return text, 0
+
+		end = start
+		while end + 1 < len(lines) and lines[end + 1].startswith('+'):
+			end += 1
+
+		header = ''.join(lines[start:end + 1])
+		tokens = []
+		for line in lines[start:end + 1]:
+			t = line.strip()
+			if t.startswith('+'):
+				t = t[1:].strip()
+			tokens += t.split()
+		# tokens[0] = '.subckt', tokens[1] = design name
+		prefix, ports = tokens[:2], tokens[2:]
+
+		names = set(ports)
+		kept = []
+		dropped = []
+		for port in ports:
+			m = self.UQ.match(port)
+			if m and m.group(1) in names:
+				dropped.append(port)
+				continue
+			if port in kept:
+				dropped.append(port)
+				continue
+			kept.append(port)
+
+		if not dropped:
+			return text, 0
+
+		# Re-emit the header with `+` continuations (a single 1k-character
+		# line is above some SPICE readers' buffer size).
+		out = [' '.join(prefix)]
+		for port in kept:
+			if len(out[-1]) + 1 + len(port) > 78:
+				out.append('+')
+			out[-1] = out[-1] + ' ' + port
+		lines[start:end + 1] = [line + '\n' for line in out]
+		return ''.join(lines), len(dropped)
 
 	def run(self, state_in, **kwargs):
 		src = state_in[DesignFormat.SPICE]
@@ -164,12 +229,35 @@ class MergeWellNets(Step):
 
 		text, count = re.subn(r'(?<!\S)\S+/VNW(?!\S)', 'vdpwr', text)
 
+		text, dropped = self._collapse_ports(text, self.config['DESIGN_NAME'])
+
 		with open(dst, 'w', encoding='utf-8') as f:
 			f.write(text)
 
-		print(f'MergeWellNets: {count} well net references tied to vdpwr')
+		print(f'MergeWellNets: {count} well net references tied to vdpwr, '
+			f'{dropped} duplicate pad ports collapsed')
 
 		return {DesignFormat.SPICE: Path(dst)}, {}
+
+
+@Step.factory.register()
+class ExtractSpice(Magic.SpiceExtraction):
+	"""Magic SPICE extraction with short reporting enabled.
+
+	Runs the stock extraction but with our own copy of the script, which
+	enables `extract warn all`: the default warning level silently merges
+	nets that the extractor finds shorted, so a layout short shows up only as
+	an LVS failure with no indication of which nets were merged.
+	"""
+
+	id = "TT.Top.ExtractSpice"
+	name = "SPICE Extraction (report shorted nets)"
+
+	def get_script_path(self):
+		return os.path.join(
+			os.path.dirname(__file__),
+			"extract_spice.tcl"
+		)
 
 
 class TopFlow(SequentialFlow):
@@ -204,7 +292,7 @@ class TopFlow(SequentialFlow):
 		Checker.XOR,
 		Magic.DRC,
 		Checker.MagicDRC,
-		Magic.SpiceExtraction,
+		ExtractSpice,
 		MergeWellNets,
 		Checker.IllegalOverlap,
 		Netgen.LVS,
