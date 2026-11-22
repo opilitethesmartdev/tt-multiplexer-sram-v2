@@ -88,35 +88,8 @@ add_pdn_connect \
     -grid macro \
     -layers "$::env(FP_PDN_VERTICAL_LAYER) $::env(FP_PDN_HORIZONTAL_LAYER)"
 
-# Arrakeen SRAM macros expose their vdd/vss pins on Metal3, so add an
-# explicit Metal4 -> Metal3 connection and Metal4 straps over the macros
-# to tie them into the Metal4/Metal5 grid.
-define_pdn_grid \
-    -macro \
-    -name sram_macros \
-    -cells "SP6TSRAM256x32" \
-    -starts_with POWER \
-    -halo "$::env(FP_PDN_HORIZONTAL_HALO) $::env(FP_PDN_VERTICAL_HALO)"
-
-add_pdn_connect \
-    -grid sram_macros \
-    -layers "$::env(FP_PDN_VERTICAL_LAYER) $::env(FP_PDN_HORIZONTAL_LAYER)"
-
-add_pdn_connect \
-    -grid sram_macros \
-    -layers "$::env(FP_PDN_VERTICAL_LAYER) Metal3"
-
-# The straps must land on the vdd/vss strips, which start at x=35.65um inside
-# the macro, and must stay clear of the a[] pins that run along the left edge
-# (x 0..2.98um). An offset of 0.68 put a Metal4 strap right on top of those
-# pins: signal vias from the pins shorted into it (DRT reported
-# "Short net:_105_ net:vdpwr" on Metal4 at the macro edge).
-add_pdn_stripe \
-    -grid sram_macros \
-    -layer Metal4 \
-    -width 1.36 \
-    -offset 40 \
-    -spacing 0.28 \
-    -pitch 284.16 \
-    -starts_with POWER \
-    -number_of_straps 2
+# The Arrakeen SRAM's vdd/vss pins are Metal3 strips that interleave every
+# 0.5-27um, so a Metal4 strap over the macro (what this grid used to draw)
+# touches both supplies and shorts them. They are connected per strip in
+# TT.Top.CustomRoute instead (MacroPowerVias: Via3 -> short Metal4 jog ->
+# Via4 on the matching Metal5 stripe), which cannot cross the other supply.

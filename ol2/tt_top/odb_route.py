@@ -1086,6 +1086,161 @@ class ModulePowerStrapper:
 					self._draw_stripe(sw, yp, yw, xl, xr, pd)
 
 
+class MacroPowerVias:
+	"""Tie the hardened macros' power pins into the Metal5 grid.
+
+	Every macro in this design exposes its power pins on Metal4 (tt_mux,
+	tt_ctrl, the power gates, the user modules, chip_rom) or on Metal3 (the
+	Arrakeen SRAM). The Metal5 stripes are horizontal and cross both.
+
+	pdngen's macro grid does not create those connections: it needs a grid
+	stripe on the lower layer to put a via on, and it has none over a macro.
+	The result was that every mux's VDPWR pin sat on its own floating net
+	(named after the pin itself), i.e. those muxes are unpowered in silicon,
+	and pdngen's Metal4 straps over the SRAM - 1.36um wide, crossing the
+	macro's interleaved vdd/vss Metal3 strips - tied the two supplies
+	together.
+
+	So connect them explicitly, per net:
+	  * Metal4 pin: one Via4 where the pin overlaps a same-net Metal5 stripe.
+	  * Metal3 pin: Via3 up to Metal4, a short Metal4 jog to a same-net
+	    Metal5 stripe, and a Via4 there. The jog crosses other pins of the
+	    macro on Metal3, but without a via that is not a connection, and it
+	    is the same net's own stripe it lands on.
+	"""
+
+	NETS = ('vdpwr', 'vgnd', 'vapwr')
+
+	def __init__(self, reader):
+		self.reader = reader
+		self.tech = reader.db.getTech()
+		self.dbu = reader.block.getDbUnitsPerMicron()
+
+		self.v34 = ViaGenerator(reader, 'Via3_GEN_HH')
+		self.v45 = ViaGenerator(reader, 'Via4_GEN_HH')
+		self.m4 = self.tech.findLayer('Metal4')
+
+		# Via footprints, used as the minimum pin/stripe overlap.
+		self.min_m4 = (self.v45.cut_sz[0] + 2 * self.v45.bot_enc[0],
+			self.v45.cut_sz[1] + 2 * self.v45.bot_enc[1])
+		self.min_m3 = (self.v34.cut_sz[0] + 2 * self.v34.bot_enc[0],
+			self.v34.cut_sz[1] + 2 * self.v34.bot_enc[1])
+
+		self.stripes = {}
+		for name in self.NETS:
+			net = reader.block.findNet(name)
+			rects = []
+			if net is not None:
+				for sw in net.getSWires():
+					for w in sw.getWires():
+						if w.isVia():
+							continue
+						if w.getTechLayer().getName() != 'Metal5':
+							continue
+						rects.append((w.xMin(), w.yMin(), w.xMax(), w.yMax()))
+			self.stripes[name] = rects
+
+		self.used = set()
+
+	def _nearest_stripe(self, name, y):
+		best = None
+		for st in self.stripes[name]:
+			d = 0 if (st[1] <= y <= st[3]) else min(abs(y - st[1]), abs(y - st[3]))
+			if best is None or d < best[0]:
+				best = (d, st)
+		return best[1] if best is not None else None
+
+	def _m4_pin(self, net, r):
+		best = None
+		for st in self.stripes[net.getName()]:
+			ox = min(r.xMax(), st[2]) - max(r.xMin(), st[0])
+			oy = min(r.yMax(), st[3]) - max(r.yMin(), st[1])
+			if ox <= 0 or oy <= 0:
+				continue
+			area = ox * oy
+			if best is None or area > best[0]:
+				best = (area, ox, oy, st)
+		if best is None:
+			return 0
+		_, ox, oy, st = best
+		if ox < self.min_m4[0] or oy < self.min_m4[1]:
+			return 0
+		x = (max(r.xMin(), st[0]) + min(r.xMax(), st[2])) // 2
+		y = (max(r.yMin(), st[1]) + min(r.yMax(), st[3])) // 2
+		via = self.v45.get4sz_ext(ox, oy, bot_fit='xy', top_fit='xy')
+		if via is None:
+			return 0
+		key = (net.getName(), x, y)
+		if key in self.used:
+			return 0
+		self.used.add(key)
+		sw = odb.dbSWire.create(net, "ROUTED")
+		odb.createSBoxes(sw, via, [odb.Point(x, y)], "STRIPE")
+		return 1
+
+	def _m3_pin(self, net, r, idx):
+		st = self._nearest_stripe(net.getName(), (r.yMin() + r.yMax()) // 2)
+		if st is None:
+			return 0
+
+		# Jog near the pin's end: the SRAM's signal pins are on the left
+		# edge, so the far end is clear.
+		x = self._snap(r.xMax() - (idx + 1) * 1200)
+		if x < r.xMin() + 400 or x > r.xMax() - 400:
+			x = (r.xMin() + r.xMax()) // 2
+
+		y0 = (r.yMin() + r.yMax()) // 2
+		y1 = (st[1] + st[3]) // 2
+
+		via3 = self.v34.get(1, 1)
+		via4 = self.v45.get(1, 1)
+
+		key = (net.getName(), 'm3', x, y0, y1)
+		if key in self.used:
+			return 0
+		self.used.add(key)
+
+		# 0.8um wide, so the Via4 enclosure (0.76um) sits inside it.
+		sw = odb.dbSWire.create(net, "ROUTED")
+		odb.createSBoxes(sw, self.m4, [
+			odb.Rect(x - 400, min(y0, y1), x + 400, max(y0, y1)),
+		], "STRIPE")
+		odb.createSBoxes(sw, via3, [odb.Point(x, y0)], "STRIPE")
+		odb.createSBoxes(sw, via4, [odb.Point(x, y1)], "STRIPE")
+		return 1
+
+	def _snap(self, v):
+		return (v // self.grid) * self.grid
+
+	def run(self):
+		self.grid = self.reader.db.getTech().getManufacturingGrid()
+
+		n4 = 0
+		n3 = 0
+		for inst in self.reader.block.getInsts():
+			master = inst.getMaster().getName()
+			if master.startswith(STDCELL_PREFIXES):
+				continue
+			idx = 0
+			for it in inst.getITerms():
+				net = it.getNet()
+				if net is None or net.getName() not in self.NETS:
+					continue
+				for geom in it.getGeometries():
+					layer, r = geom[0], geom[1]
+					if not hasattr(layer, 'getName'):
+						continue
+					ly = layer.getName()
+					if ly == 'Metal4':
+						n4 += self._m4_pin(net, r)
+					elif ly == 'Metal3':
+						n3 += self._m3_pin(net, r, idx)
+						idx += 1
+
+		print(f'MacroPowerVias: {n4} Metal4 pins and {n3} Metal3 pins tied '
+			f'to the stripes')
+
+
 class WellTaps:
 	"""Insert well-tap cells next to the placed standard cells.
 
@@ -2745,6 +2900,10 @@ def route(
 
 	# Power the top level standard cells
 	p = StdCellPower(reader)
+	p.run()
+
+	# Tie the hardened macros' power pins to the Metal5 stripes
+	p = MacroPowerVias(reader)
 	p.run()
 
 	# Make the (segmented) core ring continuous, so the Metal5 stripes are not
