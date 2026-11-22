@@ -1467,11 +1467,11 @@ class StdCellPower:
 				if d:
 					ks.append(k0 - d)
 
-			# Only the nearest few stripes can plausibly be reached without
-			# crossing a macro row.
+			# Try the nearest stripes first; a farther stripe is sometimes the
+			# only one reachable without crossing a macro row.
 			stripe_order = sorted(
 				stripes[net_name], key=lambda y: abs(y - yc)
-			)[:6]
+			)
 
 			found = None
 			for k in ks:
@@ -1485,7 +1485,12 @@ class StdCellPower:
 					yriser = self._snap_hi(yt)
 					ya, yb = min(yvia, yriser), max(yvia, yriser)
 					if (yb - ya) < self.riser_w:
-						ym = (ya + yb) // 2
+						# The stripe is effectively at the rail. Center a
+						# minimum-length riser on a grid multiple: an odd
+						# half-grid centre puts both edges on a 2.5nm grid, and
+						# Magic (5nm) and KLayout (1nm) then disagree by 1nm
+						# (the remaining Metal4 XOR slivers).
+						ym = (((ya + yb) // 2) // self.grid) * self.grid
 						ya = ym - self.riser_w // 2
 						yb = ya + self.riser_w
 
@@ -1769,6 +1774,37 @@ class PadPowerStraps:
 			via = self.v34.get(1, 1)
 		return via
 
+	def _free_span(self, net_name, x0, x1, y0, y1):
+		"""Largest sub-interval of [y0, y1] not covered by another net's pin.
+
+		A few power pads have a pad_raw signal pin at the same y (its metal
+		sits just inside the die edge, inside the power pad's y range), so the
+		full-height stub would short to it. Use the tallest clear part instead.
+		"""
+		blocked = []
+		for other, r in self.pins:
+			if other == net_name:
+				continue
+			if (min(x1, r[2]) > max(x0, r[0])) and (min(y1, r[3]) > max(y0, r[1])):
+				blocked.append((max(y0, r[1]), min(y1, r[3])))
+
+		if not blocked:
+			return (y0, y1)
+
+		blocked.sort()
+		free = []
+		cur = y0
+		for b0, b1 in blocked:
+			if b0 > cur:
+				free.append((cur, b0))
+			cur = max(cur, b1)
+		if y1 > cur:
+			free.append((cur, y1))
+
+		if not free:
+			return None
+		return max(free, key=lambda t: t[1] - t[0])
+
 	def _strap_side(self, net_name, side, box):
 		lx0, lx1 = self.lanes[net_name][side]
 		lc = (lx0 + lx1) // 2
@@ -1778,6 +1814,17 @@ class PadPowerStraps:
 
 		x0 = (min(box.xMin(), lx0) // self.snap) * self.snap
 		x1 = -((-max(box.xMax(), lc)) // self.snap) * self.snap
+
+		span = self._free_span(net_name, x0, x1, py0, py1)
+		if span is None:
+			return False
+		py0, py1 = span
+
+		# The via needs a couple of microns of height.
+		if (py1 - py0) < 4 * self.dbu:
+			print(f'PadPowerStraps: {net_name} {side} strap skipped, '
+				f'no clear pad height')
+			return False
 
 		rect = (x0, py0, x1, py1)
 		other = self._conflict(net_name, rect)

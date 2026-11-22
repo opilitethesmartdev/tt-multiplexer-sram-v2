@@ -13,6 +13,7 @@ import json
 import math
 import os
 import pathlib
+import re
 import shutil
 import sys
 
@@ -20,6 +21,7 @@ from typing import List, Type
 
 from librelane.flows.misc import OpenInKLayout
 from librelane.flows.sequential import SequentialFlow
+from librelane.state import DesignFormat
 from librelane.steps.odb import OdbpyStep
 from librelane.steps import (
 	Step,
@@ -84,6 +86,48 @@ class OptionalManualMacroPlacement(Odb.ManualMacroPlacement):
 
 
 
+@Step.factory.register()
+class MergeWellNets(Step):
+	"""Tie the extracted well nets to vdpwr.
+
+	The standard cells expose VNW/VPW pins because the PDK SPICE models have
+	them, but the LEF-level (abstract) extractor has no geometry for them:
+	Magic warns "Couldn't find label VNW" and the wells come out as separate
+	geometry-only nets (`_NNN_/VNW`), which netgen cannot match against the
+	single vdpwr net of the netlist. Physically the wells are tied to the
+	supplies by the filltie tap cells inserted next to the logic (see
+	WellTaps in odb_route.py).
+
+	Merge those nets in the extracted layout netlist before LVS. Only
+	instance-line net tokens are touched; the `.subckt` pin lists are not.
+	"""
+
+	id = "TT.Top.MergeWellNets"
+	name = "Tie extracted well nets to vdpwr"
+
+	inputs = [DesignFormat.SPICE]
+	outputs = [DesignFormat.SPICE]
+
+	def run(self, state_in, **kwargs):
+		src = state_in[DesignFormat.SPICE]
+		dst = os.path.join(
+			self.step_dir,
+			f'{self.config["DESIGN_NAME"]}.spice',
+		)
+
+		with open(src, encoding='utf-8') as f:
+			text = f.read()
+
+		text, count = re.subn(r'(?<!\S)\S+/VNW(?!\S)', 'vdpwr', text)
+
+		with open(dst, 'w', encoding='utf-8') as f:
+			f.write(text)
+
+		print(f'MergeWellNets: {count} well net references tied to vdpwr')
+
+		return {DesignFormat.SPICE: dst}, {}
+
+
 class TopFlow(SequentialFlow):
 
 	Steps: List[Type[Step]] = [
@@ -117,6 +161,7 @@ class TopFlow(SequentialFlow):
 		Magic.DRC,
 		Checker.MagicDRC,
 		Magic.SpiceExtraction,
+		MergeWellNets,
 		Checker.IllegalOverlap,
 		Netgen.LVS,
 		Checker.LVS,
@@ -377,13 +422,6 @@ if __name__ == '__main__':
 
 		# LVS
 		"MAGIC_DEF_LABELS" : False,
-		# The wrapper has several power/ground pads per domain (vccd1/vccd2/...,
-		# vssd1/vssd2/...). With the default "all", Magic makes every top-level
-		# port a unique net, so the layout ends up with a different port list
-		# from the schematic and netgen reports "top level cell failed pin
-		# matching". "notopports" keeps the ports mergeable by net, which is
-		# what the reference GF180 testchip uses for the same reason.
-		"MAGIC_EXT_UNIQUE" : "notopports",
 		"MAGIC_EXT_SHORT_RESISTOR" : True, # Fixes LVS failures when more than two pins are connected to the same net
 		"IGNORE_DISCONNECTED_MODULES": disc_modules,
 
