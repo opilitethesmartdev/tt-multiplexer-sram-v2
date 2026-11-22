@@ -1404,6 +1404,129 @@ class StdCellPower:
 			f'{n_degenerate} degenerate')
 
 
+class RingTie:
+	"""Bridge the gaps in the core ring.
+
+	pdngen emits the vdpwr ring's vertical segments in pieces: the left lane
+	has 6 segments and the right lane 5, with ~221um gaps between them (the
+	vgnd and vapwr rings are single segments). Every Metal5 stripe of a net
+	terminates on that net's ring, so each gap splits the grid into an
+	independent horizontal band: the extracted layout then has several
+	"net vdpwr" fragments, and only the bands that happen to reach an edge
+	pad are powered in silicon.
+
+	Each net's vertical ring lane is exclusive - the rings are nested with
+	2um gaps (vapwr 16.16..28.16, vgnd 30.16..42.16, vdpwr 44.16..56.16 on
+	the left, mirrored on the right) - so a continuous bar on the lane can
+	only touch the same net's own ring segments. A 12um bar is well below
+	the 30um slotted-metal threshold.
+	"""
+
+	NETS = ('vdpwr', 'vgnd', 'vapwr')
+
+	def __init__(self, reader):
+		self.reader = reader
+		self.tech = reader.db.getTech()
+		self.m4 = self.tech.findLayer('Metal4')
+		self.v45 = ViaGenerator(reader, 'Via4_GEN_HH')
+		self.dbu = reader.block.getDbUnitsPerMicron()
+
+		die = reader.block.getDieArea()
+		self.x0, self.y0 = die.xMin(), die.yMin()
+		self.x1, self.y1 = die.xMax(), die.yMax()
+
+	def run(self):
+		mid = (self.x0 + self.x1) // 2
+
+		for net_name in self.NETS:
+			net = self.reader.block.findNet(net_name)
+			if net is None:
+				continue
+
+			segs = []
+			for sw in net.getSWires():
+				for w in sw.getWires():
+					if w.isVia():
+						continue
+					if w.getTechLayer().getName() != 'Metal4':
+						continue
+					if w.getWireShapeType() != 'RING':
+						continue
+					segs.append(w)
+
+			if not segs:
+				continue
+
+			for side, pred in (
+				('l', lambda s: s.xMax() <= mid),
+				('r', lambda s: s.xMin() >= mid),
+			):
+				lane = [s for s in segs if pred(s)]
+				if not lane:
+					continue
+
+				x0 = min(s.xMin() for s in lane)
+				x1 = max(s.xMax() for s in lane)
+				xc = (x0 + x1) // 2
+				bar_w = x1 - x0
+
+				# Existing vias of this net, used to avoid piling a second via
+				# on top of one pdngen already placed at the stripe crossings.
+				# Via sboxes carry their footprint as their bounding box.
+				existing = []
+				stripes = []
+				for sw in net.getSWires():
+					for w in sw.getWires():
+						if w.isVia():
+							existing.append(
+								(w.xMin(), w.yMin(), w.xMax(), w.yMax())
+							)
+							continue
+						if w.getTechLayer().getName() != 'Metal5':
+							continue
+						if w.getWireShapeType() != 'STRIPE':
+							continue
+						stripes.append(w)
+
+				# Full die height: the stripes are not all inside the ring's
+				# own y extent, so the bar has to span everything to tie them.
+				sw = odb.dbSWire.create(net, "ROUTED")
+				odb.createSBoxes(sw, self.m4, [
+					odb.Rect(x0, self.y0, x1, self.y1)
+				], "RING")
+
+				# A stripe that crosses the bar but has no via there yet (the
+				# ones above/below the ring's own segments) needs one.
+				n_via = 0
+				for st in stripes:
+					if not (st.xMin() <= xc <= st.xMax()):
+						continue
+					if any(
+						(ex0 < x1) and (ex1 > x0)
+							and (ey0 < st.yMax()) and (ey1 > st.yMin())
+							for ex0, ey0, ex1, ey1 in existing
+					):
+						continue
+					yv = (st.yMin() + st.yMax()) // 2
+					vw = min(bar_w, st.getDX())
+					vh = st.getDY()
+					via = self.v45.get4sz_ext(vw, vh, bot_fit='xy', top_fit='xy')
+					if via is None:
+						via = self.v45.get(1, 1)
+					odb.createSBoxes(sw, via, [odb.Point(xc, yv)], "STRIPE")
+					n_via += 1
+
+				lane.sort(key=lambda s: s.yMin())
+				prev = None
+				gaps = 0
+				for s in lane:
+					if prev is not None and s.yMin() > prev:
+						gaps += 1
+					prev = max(prev or 0, s.yMax())
+				print(f'RingTie: {net_name}/{side} lane x={x0/self.dbu:.2f}..{x1/self.dbu:.2f}, '
+					f'{len(lane)} segments, {gaps} bridged gaps, {n_via} new stripe vias')
+
+
 class RingPowerStrapper:
 
 	def __init__(self, reader):
@@ -2135,6 +2258,11 @@ def route(
 
 	# Power the top level standard cells
 	p = StdCellPower(reader)
+	p.run()
+
+	# Make the (segmented) core ring continuous, so the Metal5 stripes are not
+	# split into independent horizontal bands
+	p = RingTie(reader)
 	p.run()
 
 	# The generated grid does not need extra margin spines: every net's

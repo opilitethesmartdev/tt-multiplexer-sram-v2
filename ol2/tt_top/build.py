@@ -21,7 +21,6 @@ from typing import List, Type
 from librelane.flows.misc import OpenInKLayout
 from librelane.flows.sequential import SequentialFlow
 from librelane.steps.odb import OdbpyStep
-from librelane.steps.openroad import OpenROADStep
 from librelane.steps import (
 	Step,
 	Yosys,
@@ -85,7 +84,7 @@ class OptionalManualMacroPlacement(Odb.ManualMacroPlacement):
 
 
 @Step.factory.register()
-class WellTapInsertion(OpenROADStep):
+class WellTapInsertion(OpenROAD.TapEndcapInsertion):
 	"""Insert well-tap cells before global placement.
 
 	Without taps the n-well of the glue logic is an isolated net in the
@@ -96,6 +95,10 @@ class WellTapInsertion(OpenROADStep):
 	edges. Here the core edge is occupied by the macro columns in the branch
 	rows, and an endcap cell in a macro-free band would have no power rail to
 	connect to, so only the well taps are inserted.
+
+	It inherits from the stock step so that its configuration variables
+	(FP_TAPCELL_DIST, WELLTAP_CELL, FP_MACRO_*_HALO) are exported to the Tcl
+	environment, but runs our own script, which passes only -tapcell_master.
 	"""
 
 	id = "TT.Top.WellTapInsertion"
