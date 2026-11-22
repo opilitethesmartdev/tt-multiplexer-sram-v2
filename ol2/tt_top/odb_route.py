@@ -1645,7 +1645,7 @@ class StdCellPower:
 		# other net.
 		lane = max(2 * self.riser_w, 2 * self.grid)
 		placed = []
-		via_points = {}
+		self.via_points = {}
 
 		# The via must fit inside the cell's Metal1 abutment strip; use the
 		# actual Metal1 footprint of the Via1 rather than the riser width.
