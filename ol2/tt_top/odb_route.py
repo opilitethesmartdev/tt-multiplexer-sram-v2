@@ -1180,14 +1180,26 @@ class MacroPowerVias:
 		# all around the cut (hundreds of XOR slivers).
 		x = self._snap((max(r.xMin(), st[0]) + min(r.xMax(), st[2])) // 2)
 		y = self._snap((max(r.yMin(), st[1]) + min(r.yMax(), st[3])) // 2)
-		via = self.v45.get4sz_ext(ox, oy, bot_fit='xy', top_fit='xy')
-		if via is None:
-			return 0
-		if not self._claim_via(net.getName(), x, y):
-			return 0
-		sw = odb.dbSWire.create(net, "ROUTED")
-		odb.createSBoxes(sw, via, [odb.Point(x, y)], "STRIPE")
-		return 1
+		# Discrete 1x1 vias, spaced along the overlap. A multi-cut generate
+		# array is packed from the pin's own size and its neighbouring cuts
+		# end up touching, which Magic (which merges cuts when streaming GDS)
+		# and KLayout (which keeps them apart) resolve differently - that is
+		# what produced 1046 Via4 XOR slivers. 1x1 vias are unambiguous.
+		step = 1200
+		n = max(1, min(4, ox // step))
+		lo_x = max(r.xMin(), st[0]) + self.min_m4[0] // 2
+		hi_x = min(r.xMax(), st[2]) - self.min_m4[0] // 2
+		sw = None
+		placed_here = 0
+		for k in range(n):
+			xk = self._snap(lo_x + (hi_x - lo_x) * k // max(1, n - 1) if n > 1 else x)
+			if not self._claim_via(net.getName(), xk, y):
+				continue
+			if sw is None:
+				sw = odb.dbSWire.create(net, "ROUTED")
+			odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(xk, y)], "STRIPE")
+			placed_here += 1
+		return 1 if placed_here else 0
 
 	def _m3_pin(self, net, r, idx):
 		st = self._nearest_stripe(net.getName(), (r.yMin() + r.yMax()) // 2)
