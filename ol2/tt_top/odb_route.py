@@ -1501,6 +1501,17 @@ class StdCellPower:
 					return (xv, yv, xh, yriser, by, ya, yb)
 		return None
 
+	def _stripe_via(self, sw, net_name, x, y):
+		# One Via4 per stripe location per net. Two vias whose cuts overlap
+		# are merged differently by Magic and KLayout (1nm XOR slivers), so
+		# keep them apart instead of stacking them.
+		for vx, vy in self.via_points.get(net_name, ()):
+			if abs(vx - x) < self.riser_w and abs(vy - y) < self.riser_w:
+				return False
+		self.via_points.setdefault(net_name, []).append((x, y))
+		odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, y)], 'STRIPE')
+		return True
+
 	def _riser_conflict(self, net_name, x, ya, yb, placed, lane):
 		# Special wiring is not checked by the router, so a riser of one net
 		# crossing a riser of the other would short vdpwr to vgnd in layout
@@ -1634,7 +1645,7 @@ class StdCellPower:
 		# other net.
 		lane = max(2 * self.riser_w, 2 * self.grid)
 		placed = []
-		via_points = set()
+		via_points = {}
 
 		# The via must fit inside the cell's Metal1 abutment strip; use the
 		# actual Metal1 footprint of the Via1 rather than the riser width.
@@ -1758,7 +1769,7 @@ class StdCellPower:
 					], "STRIPE")
 					for vg in (self.v12, self.v23, self.v34):
 						odb.createSBoxes(sw, vg.get(1, 1), [odb.Point(xv, yv)], "STRIPE")
-					odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(xh, yriser)], "STRIPE")
+					self._stripe_via(sw, net_name, xh, yriser)
 					placed.append((net_name, min(xv, xh) - lane // 2,
 						max(xv, xh) + lane // 2, ya, yb))
 					n_sideways += 1
@@ -1781,10 +1792,7 @@ class StdCellPower:
 
 			# One Via4 per (lane, stripe) even when several rails of this net
 			# share the riser, so the cut arrays never overlap each other.
-			vkey = (net_name, x, yriser)
-			if vkey not in via_points:
-				via_points.add(vkey)
-				odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, yriser)], "STRIPE")
+			self._stripe_via(sw, net_name, x, yriser)
 
 			n_risers += 1
 

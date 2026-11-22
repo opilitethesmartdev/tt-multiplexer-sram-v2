@@ -175,6 +175,10 @@ class MergeWellNets(Step):
 	SUPPLY_PINS = ('VDD', 'VNW', 'VPW', 'VSS')
 	POWER_PINS = ('VDD', 'VNW')
 	GROUND_PINS = ('VSS', 'VPW')
+	# Outputs can never be legitimately tied to a supply; inputs can (a
+	# mux2_2 with I0 tied low is a normal synthesis tie-off, and its I0 is
+	# genuinely on the ground net in the netlist as well).
+	OUTPUT_PINS = ('Z', 'Q', 'QN', 'CO')
 
 	def _subckt_pins(self, text):
 		pins = {}
@@ -224,37 +228,59 @@ class MergeWellNets(Step):
 		out = []
 		fixed = 0
 		unsafe = 0
-		for line in lines:
-			t = line.strip()
-			if t.startswith('X'):
-				toks = t.split()
-				master = toks[-1]
-				pl = pins.get(master)
-				if pl and master.startswith('gf180mcu_fd_sc_'):
-					nodes = toks[1:-1]
-					if len(nodes) == len(pl):
-						d = dict(zip(pl, nodes))
-						vdd, vss = d.get('VDD'), d.get('VSS')
-						if vdd is not None and vdd == vss:
-							others = [
-								k for k, v in d.items()
-								if v == vdd and k not in self.SUPPLY_PINS
-							]
-							if others:
-								unsafe += 1
-							else:
-								new = []
-								for k, v in zip(pl, nodes):
-									if k in self.POWER_PINS:
-										new.append('vdpwr')
-									elif k in self.GROUND_PINS:
-										new.append('vgnd')
-									else:
-										new.append(v)
-								line = ' '.join([toks[0]] + new + [master]) + '\n'
-								fixed += 1
-			out.append(line)
+		i = 0
+		while i < len(lines):
+			t = lines[i].strip()
+			if not t.startswith('X'):
+				out.append(lines[i])
+				i += 1
+				continue
+
+			# Instance statements wrap at ~78 characters with `+` lines.
+			toks = t.split()
+			j = i + 1
+			while j < len(lines) and lines[j].startswith('+'):
+				toks += lines[j].lstrip('+').split()
+				j += 1
+
+			master = toks[-1]
+			pl = pins.get(master)
+			if pl and master.startswith('gf180mcu_fd_sc_'):
+				nodes = toks[1:-1]
+				if len(nodes) == len(pl):
+					d = dict(zip(pl, nodes))
+					vdd, vss = d.get('VDD'), d.get('VSS')
+					if vdd is not None and vdd == vss:
+						others = [
+							k for k, v in d.items()
+							if v == vdd and k in self.OUTPUT_PINS
+						]
+						if others:
+							unsafe += 1
+						else:
+							new = []
+							for k, v in zip(pl, nodes):
+								if k in self.POWER_PINS:
+									new.append('vdpwr')
+								elif k in self.GROUND_PINS:
+									new.append('vgnd')
+								else:
+									new.append(v)
+							toks = [toks[0]] + new + [master]
+							fixed += 1
+			out.extend(line + '\n' for line in self._wrap(toks))
+			i = j
 		return ''.join(out), fixed, unsafe
+
+	@staticmethod
+	def _wrap(tokens, width=78):
+		# Re-emit a statement with `+` continuations, the way ext2spice does.
+		out = [tokens[0]]
+		for tok in tokens[1:]:
+			if len(out[-1]) + 1 + len(tok) > width:
+				out.append('+')
+			out[-1] = out[-1] + ' ' + tok
+		return out
 
 	def _collapse_ports(self, text, design):
 		lines = text.splitlines(keepends=True)
