@@ -787,6 +787,46 @@ class ViaGenerator:
 			name = f'vg_{(hash(self) & 0xffffffff):08x}_{ncols:d}x{nrows:d}'
 
 		v = odb.dbVia.create(self.reader.block, name)
+
+		# Prefer an explicit-geometry via. A generate-rule via is referenced
+		# from SPECIALNETS but odb::write_def never emits its definition, so
+		# Magic, KLayout and PDNSim all fail to resolve it (that is the XOR
+		# difference and the broken power connectivity graph). An explicit via
+		# is written as "- <name> + RECT ..." and every reader understands it.
+		built = False
+		try:
+			spc_x = max(self.cut_spc[0], 0)
+			spc_y = max(self.cut_spc[1], 0)
+
+			w = ncols * self.cut_sz[0] + (ncols - 1) * spc_x
+			h = nrows * self.cut_sz[1] + (nrows - 1) * spc_y
+
+			x0 = -(w // 2)
+			y0 = -(h // 2)
+
+			v.addBox(self.bot_ly, odb.Rect(
+				x0 - self.bot_enc[0], y0 - self.bot_enc[1],
+				x0 + w + self.bot_enc[0], y0 + h + self.bot_enc[1],
+			))
+			v.addBox(self.top_ly, odb.Rect(
+				x0 - self.top_enc[0], y0 - self.top_enc[1],
+				x0 + w + self.top_enc[0], y0 + h + self.top_enc[1],
+			))
+			for i in range(ncols):
+				for j in range(nrows):
+					cx = x0 + i * (self.cut_sz[0] + spc_x)
+					cy = y0 + j * (self.cut_sz[1] + spc_y)
+					v.addBox(self.cut_ly, odb.Rect(
+						cx, cy, cx + self.cut_sz[0], cy + self.cut_sz[1],
+					))
+			built = True
+			print(f'ViaGenerator: explicit via {name} ({ncols}x{nrows})')
+		except Exception as e:  # noqa: BLE001 - fall back to the generate rule
+			print(f'ViaGenerator: explicit via {name} failed ({e!r}), using generate rule')
+
+		if built:
+			return v
+
 		v.setViaGenerateRule(self.via_rule)
 
 		# Configure params
