@@ -1111,7 +1111,10 @@ class WellTaps:
 		self.reader = reader
 		self.block = reader.block
 		self.dbu = self.block.getDbUnitsPerMicron()
-		self.master = self.block.findMaster(self.TAP)
+		try:
+			self.master = reader.db.findMaster(self.TAP)
+		except AttributeError:
+			self.master = None
 
 	def _is_logic(self, inst):
 		name = inst.getMaster().getName()
@@ -1135,10 +1138,12 @@ class WellTaps:
 
 		width = self.master.getWidth()
 
-		# Group instances by row so the free-site search is local.
+		# Group instances by row, and build each logic row's occupancy from
+		# every instance that intersects the row band (macros span many rows).
+		all_items = [(inst, inst.getBBox()) for inst in self.block.getInsts()]
+
 		rows = {}
-		for inst in self.block.getInsts():
-			bb = inst.getBBox()
+		for inst, bb in all_items:
 			rows.setdefault(bb.yMin(), []).append((inst, bb))
 
 		n_taps = 0
@@ -1152,7 +1157,11 @@ class WellTaps:
 			if not logic:
 				continue
 
-			occ = [(bb.xMin(), bb.xMax()) for inst, bb in items]
+			row_h = logic[0][1].yMax() - logic[0][1].yMin()
+			occ = [
+				(bb.xMin(), bb.xMax()) for inst, bb in all_items
+				if (bb.yMin() < y + row_h) and (bb.yMax() > y)
+			]
 
 			def free(x):
 				x1 = x + width
@@ -1184,7 +1193,10 @@ class WellTaps:
 					print(f'WellTaps: could not create {name}, stopping')
 					n_skip += 1
 					break
-				tap.setOrient(inst.getOrient())
+				try:
+					tap.setOrient(inst.getOrient())
+				except Exception:  # noqa: BLE001 - keep the default orientation
+					pass
 				tap.setLocation(placed, y)
 				tap.setPlacementStatus('FIRM')
 				self._connect(tap, net_vdd, net_vss)
