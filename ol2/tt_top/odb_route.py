@@ -1144,32 +1144,9 @@ class MacroPowerVias:
 		self.reasons = {'no_stripe': 0, 'too_small': 0, 'claimed': 0,
 			'jogged': 0, 'loose': 0}
 
-		# Vias already placed on these nets (by pdngen, the module strapper or
-		# StdCellPower). Two vias 0.2um apart are electrically harmless (same
-		# net) but their cuts are merged differently by Magic and KLayout, so
-		# keep away from them too.
-		self.existing = {}
-		for name in self.NETS:
-			net = reader.block.findNet(name)
-			pts = []
-			if net is not None:
-				for sw in net.getSWires():
-					for w in sw.getWires():
-						if not w.isVia():
-							continue
-						# Keep the whole footprint (pdngen uses 4x4 arrays
-						# that are microns wide), plus a margin.
-						pts.append((w.xMin() - 400, w.yMin() - 400,
-							w.xMax() + 400, w.yMax() + 400))
-			self.existing[name] = pts
-
 	def _claim_via(self, net_name, x, y, keep=2000):
 		# Two vias whose cut arrays overlap are merged differently by the two
 		# streamers (1nm slivers). Keep one per net per location.
-		for x0, y0, x1, y1 in self.existing.get(net_name, ()):
-			if (x0 <= x + 400) and (x1 >= x - 400) and \
-					(y0 <= y + 400) and (y1 >= y - 400):
-				return False
 		for vx, vy in self.used.get(net_name, ()):
 			if abs(vx - x) < keep and abs(vy - y) < keep:
 				return False
