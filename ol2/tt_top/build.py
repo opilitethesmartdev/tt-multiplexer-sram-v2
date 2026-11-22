@@ -343,8 +343,14 @@ if __name__ == '__main__':
 		# 12um still carries far more than a TT block draws.
 		"FP_PDN_CORE_RING_VWIDTH"   : 12,
 		"FP_PDN_CORE_RING_HWIDTH"   : 12,
-		"FP_PDN_CORE_RING_VOFFSET"  :  0,
-		"FP_PDN_CORE_RING_HOFFSET"  :  0,
+		# With offset 0 the ring's inner edge sits exactly on the core
+		# boundary, and the mux columns start 0.2um inside it (x=62.2 on a core
+		# starting at 62.0). pdngen then snips the ring at every branch row, so
+		# the Metal5 stripes lose their only vertical tie and PDNSim reports
+		# thousands of unconnected shapes. Moving the ring 6um outward puts it
+		# clear of the macro columns, which should let it stay continuous.
+		"FP_PDN_CORE_RING_VOFFSET"  :  6,
+		"FP_PDN_CORE_RING_HOFFSET"  :  6,
 		"FP_PDN_CORE_RING_VSPACING" :  2.0,
 		"FP_PDN_CORE_RING_HSPACING" :  2.0,
 
