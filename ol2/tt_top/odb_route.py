@@ -2929,30 +2929,29 @@ def route(
 	# Load TinyTapeout
 	tti = tt.TinyTapeout(modules=False)
 
-	# Create router
+	# Signal routing is left entirely to the router.
+	#
+	# The original sky130 flow pre-routed the branch spine and the
+	# module/k01/pad buses by hand on Metal4, and relied on the sky130 tile
+	# layout in which a module's pin sits directly above the mux pin it
+	# belongs to. In this GF180 tile that alignment does not hold: the mux's
+	# um_iw pins sit at x 1470..1488, y 2190.8, while the module's ui_in row
+	# is at x ~1492, y 2038.9, with a *different* pin order along x. So every
+	# hand-drawn connection became a short vertical stub that touched neither
+	# pin (only 5 of 64 module inputs were connected in the extracted layout,
+	# and those on the wrong slot), and because a net carrying a fixed wire
+	# counts as pre-routed, TritonRoute then skipped those nets instead of
+	# fixing them. Letting the router route them dropped LVS from 197 errors
+	# to 35 - but it then collided with the hand-drawn spine, which is
+	# invisible to the router (special/`dbWire FIXED` geometry is not part of
+	# its database of routable shapes).
+	#
+	# All of these nets already have correct connectivity in the DEF, so none
+	# of the pre-routing is needed. Keep only route_um_tieoffs(), which ties
+	# off unused module inputs (that is a netlist change, not routing).
 	r = Router(reader, tti)
-	r.route_vspine()
-	r.create_spine_obs()
 	r.create_macro_obs()
-	r.route_k01_global()
-	r.route_k01_gpio()
-	r.create_k01_obs()
-	r.route_pad()
 	r.route_um_tieoffs()
-
-	# NOTE: route_um_signals() is deliberately NOT called.
-	#
-	# It draws one vertical Metal4 wire per user-module connection, at the x
-	# of the mux's pin and spanning the mux/module bbox overlap. That assumes
-	# the sky130 layout, where a module's pin sits directly above the mux pin
-	# it belongs to. In this tile the two are not vertically aligned, so the
-	# wire is a 4um stub at the spine that touches neither pin - and because a
-	# net with any fixed wire is treated as pre-routed, TritonRoute then leaves
-	# the net alone. The result was that only 5 of 64 module inputs were
-	# connected at all (and those to the wrong mux slot).
-	#
-	# These are ordinary two-pin nets whose connectivity is already correct in
-	# the DEF, so let the router route them.
 
 	# Create the module power straps
 	p = ModulePowerStrapper(reader, tti)
