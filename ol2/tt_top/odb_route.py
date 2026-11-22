@@ -1228,8 +1228,13 @@ class StdCellPower:
 	so the netlists do not match, and in silicon the logic would simply be
 	unpowered.
 
-	So draw the rails here instead, one per row of cells, and give each rail a
-	Metal4 riser up to the nearest Metal5 stripe of the same net.
+	So connect the cells' own abutment strips instead: the VDD/VSS pins of
+	GF180 cells contain a full-width 0.6um strip at the cell boundary, and
+	adjacent cells abut, so the strip already forms the row rail. Put a
+	Via1..Via3 stack inside that strip and a Metal4 riser up to the nearest
+	Metal5 stripe of the same net. Drawing Metal1 over the whole pin bounding
+	box (as an earlier version did) is wrong: the bbox also covers the cell's
+	Metal1 signal pins, which shorts every input/output to the supply.
 	"""
 
 	NETS = ('vdpwr', 'vgnd')
@@ -1320,6 +1325,32 @@ class StdCellPower:
 				ys.add((w.yMin() + w.yMax()) // 2)
 		return sorted(ys)
 
+	def _strip_band(self, rects, height):
+		"""Pick the cell-abutment power strip inside a pin's bounding box.
+
+		The GF180 VDD/VSS pins are comb polygons: a ~0.6um-tall abutment strip
+		at the top or bottom of the pin plus narrow fingers reaching into the
+		cell. The strip is the part that abuts the neighbouring cells (a
+		continuous rail along the row); the bounding box also covers the
+		Metal1 signal pins (A1/A2/Z reach up to y=3.38 in the cell frame), so
+		using the bbox shorts every signal pin to the supply.
+
+		The abutment strip is the wide, short rectangle of the pin: the
+		decomposed pin geometry contains it at the cell boundary while the
+		fingers are narrow and tall. Pick the shortest rectangle that is at
+		least half as wide as the widest one, which is orientation
+		independent.
+		"""
+		maxw = max(r[3] - r[2] for r in rects)
+		cands = [r for r in rects if (r[3] - r[2]) >= maxw // 2]
+		w = min(cands, key=lambda r: r[1] - r[0])
+		y0, y1 = w[0], w[1]
+		if (y1 - y0) < height:
+			mid = (y0 + y1) // 2
+			y0 = mid - height // 2
+			y1 = y0 + height
+		return (y0, y1)
+
 	def _runs(self):
 		# Collect the cells' Metal1 power pin shapes, grouped per net and per
 		# site row. The pins of a cell row are collinear (within a fraction of
@@ -1343,23 +1374,30 @@ class StdCellPower:
 						(r.yMin(), r.yMax(), r.xMin(), r.xMax())
 					)
 
+		strip_h = 600 * self.reader.block.getDbUnitsPerMicron() // 1000
+
 		rows = {}
 		for net_name, rects in per_net.items():
 			rects.sort(key=lambda t: (t[0] + t[1]) // 2)
 			clusters = []
-			for y0, y1, x0, x1 in rects:
-				yc = (y0 + y1) // 2
+			for r in rects:
+				yc = (r[0] + r[1]) // 2
 				if clusters:
 					c = clusters[-1]
-					if abs(((c[1] + c[2]) // 2) - yc) <= 2000:
-						c[0].append((x0, x1))
-						c[1] = min(c[1], y0)
-						c[2] = max(c[2], y1)
+					if abs(((c[0] + c[1]) // 2) - yc) <= 2000:
+						c[0] = min(c[0], r[0])
+						c[1] = max(c[1], r[1])
+						c[2].append(r)
 						continue
-				clusters.append([[(x0, x1)], y0, y1])
+				clusters.append([r[0], r[1], [r]])
 
-			for idx, (spans, y0, y1) in enumerate(clusters):
-				rows[(net_name, idx)] = (spans, y0, y1)
+			for idx, (cy0, cy1, rs) in enumerate(clusters):
+				band = self._strip_band(rs, strip_h)
+				spans = [
+					(x0, x1) for (y0, y1, x0, x1) in rs
+						if min(y1, band[1]) > max(y0, band[0])
+				]
+				rows[(net_name, idx)] = (spans, band[0], band[1])
 		return rows
 
 	def run(self):
@@ -1387,7 +1425,14 @@ class StdCellPower:
 		placed = []
 		via_points = set()
 
-		# Build the rails first (they are also the riser search space).
+		# The via must fit inside the cell's Metal1 abutment strip; use the
+		# actual Metal1 footprint of the Via1 rather than the riser width.
+		m1_half_w = (self.v12.cut_sz[0] + 2 * self.v12.bot_enc[0]) // 2
+
+		# Build the rails (the strips) first: they are the riser search space.
+		# The strips are part of the cells (adjacent cells abut into one rail),
+		# so no Metal1 geometry is drawn here; only the via that takes the
+		# strip up to Metal4.
 		rails = []
 		seen_rails = set()
 		n_degenerate = 0
@@ -1396,7 +1441,7 @@ class StdCellPower:
 			spans, y0, y1 = rows[key]
 			net_name = key[0]
 
-			# Merge touching pin shapes into one rail
+			# Merge touching strips into one rail
 			spans = sorted(spans)
 			runs = []
 			cx0, cx1 = spans[0]
@@ -1409,22 +1454,11 @@ class StdCellPower:
 			runs.append((cx0, cx1))
 
 			for x0, x1 in runs:
-				# A degenerate shape (zero width/height after snapping) is
-				# enough to crash TritonRoute while it parses the nets, so
-				# drop those instead of emitting them.
 				rx0, rx1 = self._snap_lo(x0), self._snap_hi(x1)
 				ry0, ry1 = self._snap_lo(y0), self._snap_hi(y1)
 				if (rx1 - rx0) <= 0 or (ry1 - ry0) <= 0:
 					n_degenerate += 1
 					continue
-
-				# Same geometry can be produced twice when two cells share a
-				# pin shape; drawing it twice adds duplicate via cuts, which
-				# Magic and KLayout merge differently (XOR).
-				if (rx1 - rx0) < (ry1 - ry0):
-					rx0, rx1 = self._fix_width(rx0, rx1)
-				else:
-					ry0, ry1 = self._fix_width(ry0, ry1)
 
 				r = (net_name, rx0, ry0, rx1, ry1)
 				if r in seen_rails:
@@ -1432,15 +1466,7 @@ class StdCellPower:
 				seen_rails.add(r)
 				rails.append(r)
 
-		n_rails = 0
-		for net_name, rx0, ry0, rx1, ry1 in rails:
-			net = self.reader.block.findNet(net_name)
-			sw = odb.dbSWire.create(net, "ROUTED")
-			odb.createSBoxes(sw, self.rail_ly, [
-				odb.Rect(rx0, ry0, rx1, ry1)
-			], "STRIPE")
-			n_rails += 1
-
+		n_rails = len(rails)
 		n_risers = 0
 		n_skipped = 0
 		n_conflict = 0
@@ -1449,10 +1475,10 @@ class StdCellPower:
 			net = self.reader.block.findNet(net_name)
 			yc = (ry0 + ry1) // 2
 
-			# Candidate x positions inside the rail, on the lane grid,
+			# Candidate x positions inside the strip, on the lane grid,
 			# starting in the middle and walking outwards.
-			lo = self._snap_hi(rx0 + self.riser_w // 2)
-			hi = self._snap_lo(rx1 - self.riser_w // 2)
+			lo = self._snap_hi(rx0 + m1_half_w)
+			hi = self._snap_lo(rx1 - m1_half_w)
 			if hi < lo:
 				n_skipped += 1
 				continue

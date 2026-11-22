@@ -19,6 +19,7 @@ import sys
 
 from typing import List, Type
 
+from librelane.common import Path
 from librelane.flows.misc import OpenInKLayout
 from librelane.flows.sequential import SequentialFlow
 from librelane.state import DesignFormat
@@ -125,7 +126,7 @@ class MergeWellNets(Step):
 
 		print(f'MergeWellNets: {count} well net references tied to vdpwr')
 
-		return {DesignFormat.SPICE: dst}, {}
+		return {DesignFormat.SPICE: Path(dst)}, {}
 
 
 class TopFlow(SequentialFlow):
