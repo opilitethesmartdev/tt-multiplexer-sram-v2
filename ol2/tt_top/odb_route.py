@@ -733,9 +733,6 @@ class Router:
 
 
 
-_VIA_API_DUMPED = False
-
-
 class ViaGenerator:
 
 	def __init__(self, reader, via_rule_name):
@@ -791,52 +788,9 @@ class ViaGenerator:
 
 		v = odb.dbVia.create(self.reader.block, name)
 
-		# Prefer an explicit-geometry via. A generate-rule via is referenced
-		# from SPECIALNETS but odb::write_def never emits its definition, so
-		# Magic, KLayout and PDNSim all fail to resolve it (that is the XOR
-		# difference and the broken power connectivity graph). An explicit via
-		# is written as "- <name> + RECT ..." and every reader understands it.
-		built = False
-		try:
-			spc_x = max(self.cut_spc[0], 0)
-			spc_y = max(self.cut_spc[1], 0)
-
-			w = ncols * self.cut_sz[0] + (ncols - 1) * spc_x
-			h = nrows * self.cut_sz[1] + (nrows - 1) * spc_y
-
-			x0 = -(w // 2)
-			y0 = -(h // 2)
-
-			v.addBox(self.bot_ly, odb.Rect(
-				x0 - self.bot_enc[0], y0 - self.bot_enc[1],
-				x0 + w + self.bot_enc[0], y0 + h + self.bot_enc[1],
-			))
-			v.addBox(self.top_ly, odb.Rect(
-				x0 - self.top_enc[0], y0 - self.top_enc[1],
-				x0 + w + self.top_enc[0], y0 + h + self.top_enc[1],
-			))
-			for i in range(ncols):
-				for j in range(nrows):
-					cx = x0 + i * (self.cut_sz[0] + spc_x)
-					cy = y0 + j * (self.cut_sz[1] + spc_y)
-					v.addBox(self.cut_ly, odb.Rect(
-						cx, cy, cx + self.cut_sz[0], cy + self.cut_sz[1],
-					))
-			built = True
-			print(f'ViaGenerator: explicit via {name} ({ncols}x{nrows})')
-		except Exception as e:  # noqa: BLE001 - fall back to the generate rule
-			global _VIA_API_DUMPED
-			if not _VIA_API_DUMPED:
-				_VIA_API_DUMPED = True
-				print(f'ViaGenerator: explicit via {name} failed ({e!r}), using generate rule')
-				print('  dbVia methods: ' +
-					str([m for m in dir(v) if not m.startswith('_')]))
-				print('  odb box helpers: ' +
-					str([m for m in dir(odb) if 'box' in m.lower() or 'rect' in m.lower()]))
-
-		if built:
-			return v
-
+		# Use a generate-rule via with explicit parameters. It is written to the
+		# DEF's VIAS section as "+ VIARULE ... + CUTSIZE ... + ROWCOL ...", and
+		# both Magic and KLayout resolve it without ambiguity.
 		v.setViaGenerateRule(self.via_rule)
 
 		# Configure params
@@ -1195,11 +1149,42 @@ class StdCellPower:
 
 	def _path_blocked(self, x, y0, y1):
 		# Would a Metal4 riser from y0 to y1 at x pass through a macro ?
-		for bb in self.macros:
+		for bb in self._macros_in(y0, y1):
 			if bb.xMin() <= x <= bb.xMax():
-				if (y1 > bb.yMin()) and (y0 < bb.yMax()):
-					return True
+				return True
 		return False
+
+	def _macros_in(self, y0, y1):
+		# Macros whose vertical extent intersects [y0, y1]. Pre-filtering
+		# keeps the riser search cheap (it runs for every candidate x).
+		return [
+			bb for bb in self.macros
+				if (y1 > bb.yMin()) and (y0 < bb.yMax())
+		]
+
+	def _riser_conflict(self, net_name, x, ya, yb, placed, lane):
+		# Special wiring is not checked by the router, so a riser of one net
+		# crossing a riser of the other would short vdpwr to vgnd in layout
+		# while still passing DRC. Keep one lane of clearance between risers of
+		# different nets over their common vertical extent.
+		for pnet, px0, px1, py0, py1 in placed:
+			if pnet == net_name:
+				continue
+			if (yb <= py0) or (ya >= py1):
+				continue
+			if (x + lane // 2 > px0) and (x - lane // 2 < px1):
+				return True
+		return False
+
+	def _fix_width(self, a, b):
+		# DEF writes a special-wire rectangle as a centreline plus a width.
+		# Magic streams GDS on a 5nm grid while KLayout keeps 1nm, so a width
+		# that is an odd number of grid steps puts the centreline on a half
+		# nanometre and the two streams differ by 1nm along that edge (the XOR
+		# slivers). Grow the far edge by one step to make the width even.
+		if ((b - a) // self.grid) % 2:
+			b += self.grid
+		return a, b
 
 	def _stripes(self, net):
 		ys = set()
@@ -1270,17 +1255,23 @@ class StdCellPower:
 			print('StdCellPower: no standard cell power pins found, skipping')
 			return
 
-		n_rails = 0
-		n_risers = 0
-		n_skipped = 0
+		# Riser lanes. Two risers of the same net may overlap, but a riser of
+		# vdpwr and one of vgnd in the same column is a dead short between the
+		# supplies, and special wiring bypasses the router's DRC checks. Place
+		# every riser on a lane grid and keep one lane of clearance to the
+		# other net.
+		lane = max(2 * self.riser_w, 2 * self.grid)
+		placed = []
+		via_points = set()
+
+		# Build the rails first (they are also the riser search space).
+		rails = []
+		seen_rails = set()
 		n_degenerate = 0
 
 		for key in sorted(rows):
 			spans, y0, y1 = rows[key]
 			net_name = key[0]
-
-			net = self.reader.block.findNet(net_name)
-			yc = (y0 + y1) // 2
 
 			# Merge touching pin shapes into one rail
 			spans = sorted(spans)
@@ -1304,175 +1295,113 @@ class StdCellPower:
 					n_degenerate += 1
 					continue
 
-				sw = odb.dbSWire.create(net, "ROUTED")
-				odb.createSBoxes(sw, self.rail_ly, [
-					odb.Rect(rx0, ry0, rx1, ry1)
-				], "STRIPE")
-				n_rails += 1
+				# Same geometry can be produced twice when two cells share a
+				# pin shape; drawing it twice adds duplicate via cuts, which
+				# Magic and KLayout merge differently (XOR).
+				if (rx1 - rx0) < (ry1 - ry0):
+					rx0, rx1 = self._fix_width(rx0, rx1)
+				else:
+					ry0, ry1 = self._fix_width(ry0, ry1)
 
-				# Riser to the closest stripe of the same net that is not
-				# separated from the rail by a macro
-				x = self._snap_lo((x0 + x1) // 2)
-				riser = None
-				for yt in sorted(stripes[net_name], key=lambda y: abs(y - yc)):
-					if not self._path_blocked(x, min(yc, yt), max(yc, yt)):
-						riser = yt
-						break
-
-				if riser is None:
-					n_skipped += 1
+				r = (net_name, rx0, ry0, rx1, ry1)
+				if r in seen_rails:
 					continue
+				seen_rails.add(r)
+				rails.append(r)
 
-				yvia = self._snap_lo(yc)
-				yriser = self._snap_hi(riser)
-				ya, yb = min(yvia, yriser), max(yvia, yriser)
-				if (yb - ya) < self.riser_w:
-					ym = (ya + yb) // 2
-					ya = ym - self.riser_w // 2
-					yb = ya + self.riser_w
+		n_rails = 0
+		for net_name, rx0, ry0, rx1, ry1 in rails:
+			net = self.reader.block.findNet(net_name)
+			sw = odb.dbSWire.create(net, "ROUTED")
+			odb.createSBoxes(sw, self.rail_ly, [
+				odb.Rect(rx0, ry0, rx1, ry1)
+			], "STRIPE")
+			n_rails += 1
 
-				sw = odb.dbSWire.create(net, "ROUTED")
-				odb.createSBoxes(sw, self.riser_ly, [
-					odb.Rect(x - self.riser_w // 2, ya, x + self.riser_w // 2, yb)
-				], "STRIPE")
-				for vg in (self.v12, self.v23, self.v34):
-					odb.createSBoxes(sw, vg.get(1, 1), [odb.Point(x, yvia)], "STRIPE")
+		n_risers = 0
+		n_skipped = 0
+		n_conflict = 0
+
+		for net_name, rx0, ry0, rx1, ry1 in rails:
+			net = self.reader.block.findNet(net_name)
+			yc = (ry0 + ry1) // 2
+
+			# Candidate x positions inside the rail, on the lane grid,
+			# starting in the middle and walking outwards.
+			lo = self._snap_hi(rx0 + self.riser_w // 2)
+			hi = self._snap_lo(rx1 - self.riser_w // 2)
+			if hi < lo:
+				n_skipped += 1
+				continue
+
+			kmax = (hi - lo) // lane
+			if kmax < 0:
+				kmax = 0
+			k0 = kmax // 2
+			ks = []
+			for d in range(0, kmax + 1):
+				ks.append(k0 + d)
+				if d:
+					ks.append(k0 - d)
+
+			# Only the nearest few stripes can plausibly be reached without
+			# crossing a macro row.
+			stripe_order = sorted(
+				stripes[net_name], key=lambda y: abs(y - yc)
+			)[:6]
+
+			found = None
+			for k in ks:
+				x = self._snap_lo(lo + k * lane)
+
+				for yt in stripe_order:
+					if self._path_blocked(x, min(yc, yt), max(yc, yt)):
+						continue
+
+					yvia = self._snap_lo(yc)
+					yriser = self._snap_hi(yt)
+					ya, yb = min(yvia, yriser), max(yvia, yriser)
+					if (yb - ya) < self.riser_w:
+						ym = (ya + yb) // 2
+						ya = ym - self.riser_w // 2
+						yb = ya + self.riser_w
+
+					if self._riser_conflict(net_name, x, ya, yb, placed, lane):
+						n_conflict += 1
+						continue
+
+					found = (x, yvia, yriser, ya, yb)
+					break
+
+				if found is not None:
+					break
+
+			if found is None:
+				n_skipped += 1
+				continue
+
+			x, yvia, yriser, ya, yb = found
+			placed.append((net_name, x - lane // 2, x + lane // 2, ya, yb))
+
+			sw = odb.dbSWire.create(net, "ROUTED")
+			odb.createSBoxes(sw, self.riser_ly, [
+				odb.Rect(x - self.riser_w // 2, ya, x + self.riser_w // 2, yb)
+			], "STRIPE")
+			for vg in (self.v12, self.v23, self.v34):
+				odb.createSBoxes(sw, vg.get(1, 1), [odb.Point(x, yvia)], "STRIPE")
+
+			# One Via4 per (lane, stripe) even when several rails of this net
+			# share the riser, so the cut arrays never overlap each other.
+			vkey = (net_name, x, yriser)
+			if vkey not in via_points:
+				via_points.add(vkey)
 				odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, yriser)], "STRIPE")
-				n_risers += 1
+
+			n_risers += 1
 
 		print(f'StdCellPower: {n_rails} rails, {n_risers} risers, '
-			f'{n_skipped} without a path, {n_degenerate} degenerate')
-
-
-class PdnMarginSpines:
-
-	"""Tie the Metal5 stripes together and reach the chip power pins.
-
-	Two things the generated PDN does not do on GF180:
-
-	* pdngen emits the core ring in segments. The gaps sit at the same y
-	  positions regardless of the ring offset, so the Metal5 stripes have no
-	  reliable vertical tie and PDNSim reports thousands of islands.
-	* `add_pdn_ring -connect_to_pads` never reaches the wrapper's power pins.
-	  They are BPins on Metal3 at x=-2..0.3, and PDNSim keeps listing them as
-	  unconnected shapes. With no source connected, it then reports the whole
-	  net (11708 shapes on vdpwr).
-
-	The die margin is macro-free for the full height, so draw the missing
-	vertical Metal4 spines there, tie every Metal5 stripe of the same net to
-	them with a Via4, and reach the edge pins with a Metal3 stub and a Via3.
-	"""
-
-	NETS = ('vdpwr', 'vgnd')
-
-	def __init__(self, reader):
-		self.reader = reader
-
-		tech = reader.db.getTech()
-		self.grid = tech.getManufacturingGrid()
-		self.m4 = tech.findLayer('Metal4')
-
-		self.v34 = ViaGenerator(reader, 'Via3_GEN_HH')
-		self.v45 = ViaGenerator(reader, 'Via4_GEN_HH')
-
-		self.width = 8750 * reader.block.getDbUnitsPerMicron() // 1000
-
-		die = reader.block.getDieArea()
-		if hasattr(die, 'xMin'):
-			self.x0, self.x1 = die.xMin(), die.xMax()
-			self.y0, self.y1 = die.yMin(), die.yMax()
-		else:
-			self.x0, self.y0, self.x1, self.y1 = [int(v) for v in die]
-
-		self.snap = max(reader.block.getDbUnitsPerMicron() // 200, 1)
-
-		# Spine x per (net, side): keep clear of the core ring (x 32..56 left)
-		# and of the edge pin metal (x -2..0.3).
-		off = 10000 * reader.block.getDbUnitsPerMicron() // 1000
-		offg = 21000 * reader.block.getDbUnitsPerMicron() // 1000
-		self.spines = {
-			('vdpwr', 'l'): self.x0 + off,
-			('vgnd',  'l'): self.x0 + offg,
-			('vdpwr', 'r'): self.x1 - off,
-			('vgnd',  'r'): self.x1 - offg,
-		}
-
-	def _stripes(self, net):
-		ys = set()
-		for sw in net.getSWires():
-			for w in sw.getWires():
-				if w.isVia():
-					continue
-				if w.getTechLayer().getName() != 'Metal5':
-					continue
-				ys.add((w.yMin() + w.yMax()) // 2)
-		return sorted(ys)
-
-	def _pins(self, net):
-		# Edge power pins as (layer name, x0, y0, x1, y1)
-		rv = []
-		for bterm in self.reader.block.getBTerms():
-			bn = bterm.getNet()
-			if bn is None or bn.getName() != net.getName():
-				continue
-			for bpin in bterm.getBPins():
-				for box in bpin.getBoxes():
-					try:
-						ly = box.getTechLayer().getName()
-						rv.append((ly, box.xMin(), box.yMin(), box.xMax(), box.yMax()))
-					except (AttributeError, TypeError):
-						continue
-		return rv
-
-	def run(self):
-		mid = (self.x0 + self.x1) // 2
-		n_spine = n_via45 = n_pad = 0
-
-		for net_name in self.NETS:
-			net = self.reader.block.findNet(net_name)
-			if net is None:
-				continue
-			stripes = self._stripes(net)
-
-			for side in ('l', 'r'):
-				x = self.spines[(net_name, side)]
-				x = (x // self.snap) * self.snap
-
-				# Vertical spine over the full die height
-				sw = odb.dbSWire.create(net, "ROUTED")
-				odb.createSBoxes(sw, self.m4, [
-					odb.Rect(x - self.width // 2, self.y0, x + self.width // 2, self.y1)
-				], "STRIPE")
-				n_spine += 1
-
-				# Tie every stripe of this net to the spine
-				for y in stripes:
-					odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, y)], "STRIPE")
-					n_via45 += 1
-
-				# Reach the edge pins on this side with a Metal3 stub
-				for ly, px0, py0, px1, py1 in self._pins(net):
-					pin_mid = (px0 + px1) // 2
-					if (pin_mid < mid) != (side == 'l'):
-						continue
-					ya = min(py0, py1)
-					yb = max(py0, py1)
-					ya = (ya // self.snap) * self.snap
-					yb = ((yb + self.snap - 1) // self.snap) * self.snap
-
-					xa = min(px0, x) - self.snap
-					xb = max(px1, x) + self.snap
-
-					lyr = self.reader.db.getTech().findLayer(ly)
-					sw2 = odb.dbSWire.create(net, "ROUTED")
-					odb.createSBoxes(sw2, lyr, [odb.Rect(xa, ya, xb, yb)], "STRIPE")
-					# Via up to the spine at the pad's centre
-					yv = (ya + yb) // 2
-					yv = (yv // self.snap) * self.snap
-					odb.createSBoxes(sw2, self.v34.get(1, 1), [odb.Point(x, yv)], "STRIPE")
-					n_pad += 1
-
-		print(f'PdnMarginSpines: {n_spine} spines, {n_via45} stripe vias, {n_pad} pad connections')
+			f'{n_skipped} without a path, {n_conflict} lane conflicts, '
+			f'{n_degenerate} degenerate')
 
 
 class RingPowerStrapper:
@@ -2208,9 +2137,14 @@ def route(
 	p = StdCellPower(reader)
 	p.run()
 
-	# Tie the power grid together and to the edge pins
-	p = PdnMarginSpines(reader)
-	p.run()
+	# The generated grid does not need extra margin spines: every net's
+	# Metal5 stripes already terminate on that net's core ring, and
+	# add_pdn_ring -connect_to_pads reaches the edge pins with Metal3 stubs.
+	# A vertical spine in the die margin cannot work here: it would sit
+	# outside the stripes' x extent, so its Via4 lands on no stripe, and the
+	# margin lanes are crossed by the three concentric rings (vapwr outermost,
+	# vgnd, then vdpwr), which the spine would short against. An earlier
+	# version did exactly that and tied vdpwr, vgnd and vapwr together.
 
 	# Create the ring power straps
 	p = RingPowerStrapper(reader)

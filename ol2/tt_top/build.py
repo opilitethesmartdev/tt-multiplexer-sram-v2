@@ -21,6 +21,7 @@ from typing import List, Type
 from librelane.flows.misc import OpenInKLayout
 from librelane.flows.sequential import SequentialFlow
 from librelane.steps.odb import OdbpyStep
+from librelane.steps.openroad import OpenROADStep
 from librelane.steps import (
 	Step,
 	Yosys,
@@ -83,6 +84,30 @@ class OptionalManualMacroPlacement(Odb.ManualMacroPlacement):
 		)
 
 
+@Step.factory.register()
+class WellTapInsertion(OpenROADStep):
+	"""Insert well-tap cells before global placement.
+
+	Without taps the n-well of the glue logic is an isolated net in the
+	extracted layout (each cell's VNW is only connected to its neighbours'
+	wells), so LVS can never match and the wells would float in silicon.
+
+	The stock TapEndcapInsertion step also inserts endcap cells at the core
+	edges. Here the core edge is occupied by the macro columns in the branch
+	rows, and an endcap cell in a macro-free band would have no power rail to
+	connect to, so only the well taps are inserted.
+	"""
+
+	id = "TT.Top.WellTapInsertion"
+	name = "Well Tap Insertion (no endcaps)"
+
+	def get_script_path(self):
+		return os.path.join(
+			os.path.dirname(__file__),
+			"tapcell.tcl"
+		)
+
+
 class TopFlow(SequentialFlow):
 
 	Steps: List[Type[Step]] = [
@@ -94,6 +119,7 @@ class TopFlow(SequentialFlow):
 		Odb.ApplyDEFTemplate,
 		Odb.CustomIOPlacement,
 		OptionalManualMacroPlacement,
+		WellTapInsertion,
 		CustomPower,
 		OpenROAD.GeneratePDN,
 		OpenROAD.GlobalPlacement,
@@ -325,6 +351,13 @@ if __name__ == '__main__':
 		"CORE_AREA" : [ 62.00, 85.00, 3104.63, 4681.63 ],
 		"FP_SIZING" : "absolute",
 
+		# Well taps. Without them the n-well of the glue logic is an isolated
+		# net in the extracted layout (each cell's VNW is only connected to its
+		# neighbours' wells), so LVS can never match and the wells are floating
+		# in silicon. The PDK filltie cell is the well/substrate tap; inserting
+		# it before global placement lets the placer treat it as fixed.
+		"FP_TAPCELL_DIST" : 20,
+
 		# PDN
 		"VDD_NETS": [ "vdpwr", "vapwr" ],
 		"GND_NETS": [ "vgnd",  "vgnd"  ],
@@ -376,6 +409,13 @@ if __name__ == '__main__':
 
 		# LVS
 		"MAGIC_DEF_LABELS" : False,
+		# The wrapper has several power/ground pads per domain (vccd1/vccd2/...,
+		# vssd1/vssd2/...). With the default "all", Magic makes every top-level
+		# port a unique net, so the layout ends up with a different port list
+		# from the schematic and netgen reports "top level cell failed pin
+		# matching". "notopports" keeps the ports mergeable by net, which is
+		# what the reference GF180 testchip uses for the same reason.
+		"MAGIC_EXT_UNIQUE" : "notopports",
 		"MAGIC_EXT_SHORT_RESISTOR" : True, # Fixes LVS failures when more than two pins are connected to the same net
 		"IGNORE_DISCONNECTED_MODULES": disc_modules,
 
