@@ -1093,15 +1093,14 @@ class MacroPowerVias:
 	tt_ctrl, the power gates, the user modules, chip_rom) or on Metal3 (the
 	Arrakeen SRAM). The Metal5 stripes are horizontal and cross both.
 
-	pdngen's macro grid does not create those connections: it needs a grid
-	stripe on the lower layer to put a via on, and it has none over a macro.
-	The result was that every mux's VDPWR pin sat on its own floating net
-	(named after the pin itself), i.e. those muxes are unpowered in silicon,
-	and pdngen's Metal4 straps over the SRAM - 1.36um wide, crossing the
-	macro's interleaved vdd/vss Metal3 strips - tied the two supplies
-	together.
+	pdngen's macro grid used to do this, but it drops a generate-rule via array
+	sized from the pin, and these pins are up to 17um wide: the result was
+	17.7 x 3.1um Via4 arrays on Metal4, which are special/fixed geometry the
+	router cannot see - it then routed the module signal nets straight through
+	them (11 Metal4.Short violations). The grid is gone from pdn.tcl and this
+	step does the job with small, unambiguous single-cut vias instead.
 
-	So connect them explicitly, per net:
+	Connection, per net:
 	  * Metal4 pin: one Via4 where the pin overlaps a same-net Metal5 stripe.
 	  * Metal3 pin: Via3 up to Metal4, a short Metal4 jog to a same-net
 	    Metal5 stripe, and a Via4 there. The jog crosses other pins of the
@@ -1140,17 +1139,18 @@ class MacroPowerVias:
 						rects.append((w.xMin(), w.yMin(), w.xMax(), w.yMax()))
 			self.stripes[name] = rects
 
-		self.used = {}
+		self.seen = set()
 		self.reasons = {'no_stripe': 0, 'too_small': 0, 'claimed': 0,
 			'jogged': 0, 'loose': 0}
 
-	def _claim_via(self, net_name, x, y, keep=2000):
-		# Two vias whose cut arrays overlap are merged differently by the two
-		# streamers (1nm slivers). Keep one per net per location.
-		for vx, vy in self.used.get(net_name, ()):
-			if abs(vx - x) < keep and abs(vy - y) < keep:
-				return False
-		self.used.setdefault(net_name, []).append((x, y))
+	def _claim_via(self, net_name, x, y, keep=0):
+		# One via per net per location. Exact-coordinate dedupe is enough here:
+		# a macro's power pins are hundreds of microns apart, and the only
+		# coincident case is the same pin seen twice.
+		key = (net_name, x, y)
+		if key in self.seen:
+			return False
+		self.seen.add(key)
 		return True
 
 	def _nearest_stripe(self, name, y):
@@ -1205,15 +1205,6 @@ class MacroPowerVias:
 			odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(xk, y)], "STRIPE")
 			placed_here += 1
 		if placed_here:
-			return 1
-
-		# Nothing accepted with the strict keep-out. A pin left unconnected is
-		# worse than a cut that shares a location with another cut of the same
-		# net (which only costs an XOR sliver), so retry with a 3um keep-out.
-		if self._claim_via(net.getName(), x, y, keep=6000):
-			sw = odb.dbSWire.create(net, "ROUTED")
-			odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, y)], "STRIPE")
-			self.reasons['loose'] += 1
 			return 1
 
 		# The via candidates were all rejected; fall back to a jog.
