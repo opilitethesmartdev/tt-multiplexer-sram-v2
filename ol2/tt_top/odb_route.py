@@ -1621,64 +1621,35 @@ class RingTie:
 
 				x0 = min(s.xMin() for s in lane)
 				x1 = max(s.xMax() for s in lane)
-				xc = (x0 + x1) // 2
-				bar_w = x1 - x0
 
-				# Existing vias of this net, used to avoid piling a second via
-				# on top of one pdngen already placed at the stripe crossings.
-				# Via sboxes carry their footprint as their bounding box.
-				existing = []
-				stripes = []
-				for sw in net.getSWires():
-					for w in sw.getWires():
-						if w.isVia():
-							existing.append(
-								(w.xMin(), w.yMin(), w.xMax(), w.yMax())
-							)
-							continue
-						if w.getTechLayer().getName() != 'Metal5':
-							continue
-						if w.getWireShapeType() != 'STRIPE':
-							continue
-						stripes.append(w)
-
-				# Full die height: the stripes are not all inside the ring's
-				# own y extent, so the bar has to span everything to tie them.
-				sw = odb.dbSWire.create(net, "ROUTED")
-				odb.createSBoxes(sw, self.m4, [
-					odb.Rect(x0, self.y0, x1, self.y1)
-				], "RING")
-
-				# A stripe that crosses the bar but has no via there yet (the
-				# ones above/below the ring's own segments) needs one.
-				n_via = 0
-				for st in stripes:
-					if not (st.xMin() <= xc <= st.xMax()):
-						continue
-					if any(
-						(ex0 < x1) and (ex1 > x0)
-							and (ey0 < st.yMax()) and (ey1 > st.yMin())
-							for ex0, ey0, ex1, ey1 in existing
-					):
-						continue
-					yv = (st.yMin() + st.yMax()) // 2
-					vw = min(bar_w, st.getDX())
-					vh = st.getDY()
-					via = self.v45.get4sz_ext(vw, vh, bot_fit='xy', top_fit='xy')
-					if via is None:
-						via = self.v45.get(1, 1)
-					odb.createSBoxes(sw, via, [odb.Point(xc, yv)], "STRIPE")
-					n_via += 1
-
+				# Bridge only the gaps between consecutive ring segments. A
+				# continuous bar over the whole die height is wrong: the
+				# decorative gf180mcu_ws_ip__* / tt_logo_* macros sit in the
+				# die margin and their mask-art metal spans several ring lanes,
+				# so a full-height bar would be shorted to the neighbouring
+				# supplies through them. The gaps are at branch rows, well away
+				# from the margins.
 				lane.sort(key=lambda s: s.yMin())
-				prev = None
+				n_bridge = 0
+				for a, b in zip(lane, lane[1:]):
+					ya = a.yMax() - 1000
+					yb = b.yMin() + 1000
+					if yb <= ya:
+						continue
+					sw = odb.dbSWire.create(net, "ROUTED")
+					odb.createSBoxes(sw, self.m4, [
+						odb.Rect(x0, ya, x1, yb)
+					], "RING")
+					n_bridge += 1
+
 				gaps = 0
+				prev = None
 				for s in lane:
 					if prev is not None and s.yMin() > prev:
 						gaps += 1
 					prev = max(prev or 0, s.yMax())
 				print(f'RingTie: {net_name}/{side} lane x={x0/self.dbu:.2f}..{x1/self.dbu:.2f}, '
-					f'{len(lane)} segments, {gaps} bridged gaps, {n_via} new stripe vias')
+					f'{len(lane)} segments, {gaps} gaps, {n_bridge} bridges')
 
 
 class PadPowerStraps:

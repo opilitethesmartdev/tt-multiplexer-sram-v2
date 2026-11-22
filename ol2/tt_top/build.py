@@ -87,6 +87,49 @@ class OptionalManualMacroPlacement(Odb.ManualMacroPlacement):
 
 
 
+def fix_power_pins(text):
+	"""Move the template's power/ground pins 0.4um outward.
+
+	Their Metal3 rectangles reach 0.3um inside the die, exactly where
+	Odb.CustomIOPlacement puts the signal pins (x=0..0.56um). Five signal
+	pads (including pad_raw[55], which is the clock) ended up with their pin
+	overlapping a power pad's pin, which shorts them together in the layout
+	and confuses the extractor. The padring connects outside the wrapper, so
+	moving the power pins out by 0.4um keeps that connection and leaves a
+	0.1um gap to both the die edge and the signal pins.
+	"""
+	die_x, die_y = 3166630, 4766630
+	pat = re.compile(
+		r'(\+\s+LAYER\s+\S+\s+\([^)]*\)\s+\([^)]*\)\s*\+\s+'
+		r'(?:FIXED|PLACED)\s+\(\s*)(-?\d+)(\s+)(-?\d+)(\s*\))'
+	)
+
+	out = []
+	power = False
+	for line in text.splitlines():
+		if re.match(r'\s*-\s+\S+\s+\+\s+NET\s+', line):
+			power = ('USE POWER' in line) or ('USE GROUND' in line)
+
+		if power:
+			m = pat.search(line)
+			if m:
+				x, y = int(m.group(2)), int(m.group(4))
+				if x < 0:
+					x -= 400
+				elif x > die_x:
+					x += 400
+				elif y < 0:
+					y -= 400
+				elif y > die_y:
+					y += 400
+				line = (line[:m.start()] + m.group(1) +
+					f'{x}' + m.group(3) + f'{y}' + m.group(5) +
+					line[m.end():])
+		out.append(line)
+
+	return '\n'.join(out) + '\n'
+
+
 @Step.factory.register()
 class MergeWellNets(Step):
 	"""Tie the extracted well nets to vdpwr.
@@ -307,6 +350,7 @@ if __name__ == '__main__':
 			if old not in def_text:
 				raise RuntimeError(f'Expected GF180 DEF template token not found: {old}')
 			def_text = def_text.replace(old, new)
+		def_text = fix_power_pins(def_text)
 		pathlib.Path(def_template).write_text(def_text)
 
 	# Only declare power connections for macros that actually survived
