@@ -77,16 +77,17 @@ add_pdn_ring \
     -connect_to_pads -connect_to_pad_layers Metal3
 
 # Macro connections
-define_pdn_grid \
-    -macro \
-    -name macro \
-    -cells "^(tt_(ctrl|mux|pg|um|asw)(_.*)?)$" \
-    -starts_with POWER \
-    -halo "$::env(FP_PDN_HORIZONTAL_HALO) $::env(FP_PDN_VERTICAL_HALO)"
-
-add_pdn_connect \
-    -grid macro \
-    -layers "$::env(FP_PDN_VERTICAL_LAYER) $::env(FP_PDN_HORIZONTAL_LAYER)"
+#
+# Deliberately none here. pdngen connects a macro pin to the Metal5 stripes by
+# dropping a generate-rule via array sized from the pin, and these macros'
+# power pins are up to 17um wide strips, so it produced 17.7 x 3.1um Via4
+# arrays on Metal4. That geometry is special/fixed, i.e. invisible to
+# TritonRoute, which then ran the module's signal nets straight through them
+# (11 Metal4.Short violations between uio_oe[0] and vgnd).
+#
+# Macro power pins are connected in TT.Top.CustomRoute instead
+# (MacroPowerVias: single-cut Via4s inside the pin, plus a short Metal4 jog for
+# pins that fall between two stripes), which the router can route around.
 
 # The Arrakeen SRAM's vdd/vss pins are Metal3 strips that interleave every
 # 0.5-27um, so a Metal4 strap over the macro (what this grid used to draw)
