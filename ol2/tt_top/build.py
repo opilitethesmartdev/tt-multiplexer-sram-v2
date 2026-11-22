@@ -83,33 +83,6 @@ class OptionalManualMacroPlacement(Odb.ManualMacroPlacement):
 		)
 
 
-@Step.factory.register()
-class WellTapInsertion(OpenROAD.TapEndcapInsertion):
-	"""Insert well-tap cells before global placement.
-
-	Without taps the n-well of the glue logic is an isolated net in the
-	extracted layout (each cell's VNW is only connected to its neighbours'
-	wells), so LVS can never match and the wells would float in silicon.
-
-	The stock TapEndcapInsertion step also inserts endcap cells at the core
-	edges. Here the core edge is occupied by the macro columns in the branch
-	rows, and an endcap cell in a macro-free band would have no power rail to
-	connect to, so only the well taps are inserted.
-
-	It inherits from the stock step so that its configuration variables
-	(FP_TAPCELL_DIST, WELLTAP_CELL, FP_MACRO_*_HALO) are exported to the Tcl
-	environment, but runs our own script, which passes only -tapcell_master.
-	"""
-
-	id = "TT.Top.WellTapInsertion"
-	name = "Well Tap Insertion (no endcaps)"
-
-	def get_script_path(self):
-		return os.path.join(
-			os.path.dirname(__file__),
-			"tapcell.tcl"
-		)
-
 
 class TopFlow(SequentialFlow):
 
@@ -122,7 +95,6 @@ class TopFlow(SequentialFlow):
 		Odb.ApplyDEFTemplate,
 		Odb.CustomIOPlacement,
 		OptionalManualMacroPlacement,
-		WellTapInsertion,
 		CustomPower,
 		OpenROAD.GeneratePDN,
 		OpenROAD.GlobalPlacement,
@@ -353,13 +325,6 @@ if __name__ == '__main__':
 		# columns, which the SKY130 85um margin does not allow.
 		"CORE_AREA" : [ 62.00, 85.00, 3104.63, 4681.63 ],
 		"FP_SIZING" : "absolute",
-
-		# Well taps. Without them the n-well of the glue logic is an isolated
-		# net in the extracted layout (each cell's VNW is only connected to its
-		# neighbours' wells), so LVS can never match and the wells are floating
-		# in silicon. The PDK filltie cell is the well/substrate tap; inserting
-		# it before global placement lets the placer treat it as fixed.
-		"FP_TAPCELL_DIST" : 20,
 
 		# PDN
 		"VDD_NETS": [ "vdpwr", "vapwr" ],

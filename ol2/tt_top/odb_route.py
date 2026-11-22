@@ -1086,6 +1086,117 @@ class ModulePowerStrapper:
 					self._draw_stripe(sw, yp, yw, xl, xr, pd)
 
 
+class WellTaps:
+	"""Insert well-tap cells next to the placed standard cells.
+
+	The standard cells expose well pins (VNW/VPW), but the extractor can only
+	see geometry: without a tap, the n-well of each logic cluster is a floating
+	net (LVS: `_NNN_/VNW`) and the wells would float in silicon.
+
+	The stock tapcell step fills every free row of the core with fillties -
+	67,846 cells here, because most of the core is macro-free empty row - and
+	then trips an OpenROAD DPL padding-check bug on the off-row decorative
+	macros (DPL-0011 for a fixed block whose bottom is in the upper half of a
+	row). Instead, insert the taps after detailed placement, only in rows that
+	already contain logic, in the free site immediately abutting a logic cell,
+	so they share that cell's power pin run and its well.
+	"""
+
+	TAP = 'gf180mcu_fd_sc_mcu7t5v0__filltie'
+
+	VDD_PINS = ('VDD', 'VNW')
+	VSS_PINS = ('VSS', 'VPW')
+
+	def __init__(self, reader):
+		self.reader = reader
+		self.block = reader.block
+		self.dbu = self.block.getDbUnitsPerMicron()
+		self.master = self.block.findMaster(self.TAP)
+
+	def _is_logic(self, inst):
+		name = inst.getMaster().getName()
+		return name.startswith('gf180mcu_fd_sc_') and not name.endswith('filltie')
+
+	def _connect(self, inst, net_vdd, net_vss):
+		for it in inst.getITerms():
+			pin = it.getMTerm().getName()
+			if pin in self.VDD_PINS and net_vdd is not None:
+				it.connect(net_vdd)
+			elif pin in self.VSS_PINS and net_vss is not None:
+				it.connect(net_vss)
+
+	def run(self):
+		if self.master is None:
+			print(f'WellTaps: {self.TAP} not in the library, skipping')
+			return
+
+		net_vdd = self.block.findNet('vdpwr')
+		net_vss = self.block.findNet('vgnd')
+
+		width = self.master.getWidth()
+
+		# Group instances by row so the free-site search is local.
+		rows = {}
+		for inst in self.block.getInsts():
+			bb = inst.getBBox()
+			rows.setdefault(bb.yMin(), []).append((inst, bb))
+
+		n_taps = 0
+		n_skip = 0
+
+		for y, items in sorted(rows.items()):
+			logic = [
+				(inst, bb) for inst, bb in items
+				if self._is_logic(inst)
+			]
+			if not logic:
+				continue
+
+			occ = [(bb.xMin(), bb.xMax()) for inst, bb in items]
+
+			def free(x):
+				x1 = x + width
+				for (a, b) in occ:
+					if (x < b) and (x1 > a):
+						return False
+				return True
+
+			for inst, bb in logic:
+				placed = None
+				for x in (bb.xMax(), bb.xMin() - width):
+					if free(x):
+						placed = x
+						break
+				if placed is None:
+					n_skip += 1
+					continue
+
+				name = f'TAP_WELL_{n_taps:d}'
+				try:
+					try:
+						tap = odb.dbInst.create(self.block, self.master, name)
+					except AttributeError:
+						tap = odb.dbInst_create(self.block, self.master, name)
+				except Exception as e:  # noqa: BLE001
+					print(f'WellTaps: cannot create instances ({e!r}), skipping')
+					return
+				if tap is None:
+					print(f'WellTaps: could not create {name}, stopping')
+					n_skip += 1
+					break
+				tap.setOrient(inst.getOrient())
+				tap.setLocation(placed, y)
+				tap.setPlacementStatus('FIRM')
+				self._connect(tap, net_vdd, net_vss)
+
+				# Account for the new cell in this row's occupancy.
+				occ.append((placed, placed + width))
+				n_taps += 1
+
+		print(f'WellTaps: {n_taps} taps inserted, {n_skip} logic cells '
+			f'without a free abutting site')
+
+
 class StdCellPower:
 
 	"""Tie the top-level standard cells to the Metal5 power stripes.
@@ -1525,6 +1636,241 @@ class RingTie:
 					prev = max(prev or 0, s.yMax())
 				print(f'RingTie: {net_name}/{side} lane x={x0/self.dbu:.2f}..{x1/self.dbu:.2f}, '
 					f'{len(lane)} segments, {gaps} bridged gaps, {n_via} new stripe vias')
+
+
+class PadPowerStraps:
+	"""Connect the wrapper's power pins to the grid.
+
+	pdngen's `add_pdn_ring -connect_to_pads` produces nothing usable on this
+	template: a geometric check of the DEF (and the extracted netlist) shows
+	every top-level power pin isolated and the whole grid source-less.
+
+	Left/right pins are ~24um-tall Metal3 rectangles at the die edge, so a
+	Metal3 stub can reach the net's ring lane directly (each net's lane is
+	exclusive, see RingTie) and a Via3 array lands on the continuous ring bar.
+
+	Bottom/top pins have no lane next to them. Run a Metal3 strap just inside
+	the die edge, below/above the pad pins, to the nearest ring lane: that
+	region is in the macro-free margin. Each net gets its own y band; the
+	power pads of the different nets are far apart in x, so the straps do not
+	cross. A conflict check refuses any strap that would touch geometry of a
+	different net.
+	"""
+
+	NETS = ('vdpwr', 'vgnd', 'vapwr')
+
+	# y (um, inside the die) of the bottom strap of each net; the top strap is
+	# mirrored. Only nets with bottom/top pins need one.
+	BAND_Y = {'vgnd': 2.0, 'vapwr': 6.0, 'vdpwr': 10.0}
+	BAND_H = 2.0
+
+	def __init__(self, reader):
+		self.reader = reader
+		self.tech = reader.db.getTech()
+		self.dbu = reader.block.getDbUnitsPerMicron()
+
+		self.m3 = self.tech.findLayer('Metal3')
+		self.v34 = ViaGenerator(reader, 'Via3_GEN_HH')
+
+		self.snap = max(self.dbu // 200, 1)
+
+		die = reader.block.getDieArea()
+		self.x0, self.y0 = die.xMin(), die.yMin()
+		self.x1, self.y1 = die.xMax(), die.yMax()
+
+		# Ring lanes per net (same discovery as RingTie).
+		self.lanes = {}
+		for net_name in self.NETS:
+			net = reader.block.findNet(net_name)
+			if net is None:
+				continue
+			segs = []
+			for sw in net.getSWires():
+				for w in sw.getWires():
+					if w.isVia():
+						continue
+					if w.getTechLayer().getName() != 'Metal4':
+						continue
+					if w.getWireShapeType() != 'RING':
+						continue
+					segs.append(w)
+			if not segs:
+				continue
+			mid = (self.x0 + self.x1) // 2
+			rv = {}
+			for side, pred in (
+				('l', lambda s: s.xMax() <= mid),
+				('r', lambda s: s.xMin() >= mid),
+			):
+				lane = [s for s in segs if pred(s)]
+				if lane:
+					rv[side] = (
+						min(s.xMin() for s in lane),
+						max(s.xMax() for s in lane),
+					)
+			if rv:
+				self.lanes[net_name] = rv
+
+		# All Metal3 pin boxes of every other net, for the conflict check.
+		self.pins = []
+		for net in reader.block.getNets():
+			for bterm in net.getBTerms():
+				for bpin in bterm.getBPins():
+					for box in bpin.getBoxes():
+						try:
+							ly = box.getTechLayer().getName()
+						except (AttributeError, TypeError):
+							continue
+						if ly != 'Metal3':
+							continue
+						self.pins.append((
+							net.getName(),
+							(box.xMin(), box.yMin(), box.xMax(), box.yMax()),
+						))
+
+		self.drawn = []
+
+	def _overlap(self, a, b):
+		return (min(a[2], b[2]) > max(a[0], b[0])) and \
+			(min(a[3], b[3]) > max(a[1], b[1]))
+
+	def _conflict(self, net_name, rect):
+		for other, r in self.pins:
+			if other != net_name and self._overlap(rect, r):
+				return other
+		for other, r in self.drawn:
+			if other != net_name and self._overlap(rect, r):
+				return other
+		return None
+
+	def _add(self, net, rects, via=None, point=None):
+		sw = odb.dbSWire.create(net, "ROUTED")
+		odb.createSBoxes(sw, self.m3, [odb.Rect(*r) for r in rects], "STRIPE")
+		if via is not None:
+			odb.createSBoxes(sw, via, [odb.Point(*point)], "STRIPE")
+		for r in rects:
+			self.drawn.append((net.getName(), r))
+
+	def _via_for(self, vw, vh):
+		via = self.v34.get4sz_ext(vw, vh, bot_fit='xy', top_fit='xy')
+		if via is None:
+			via = self.v34.get(1, 1)
+		return via
+
+	def _strap_side(self, net_name, side, box):
+		lx0, lx1 = self.lanes[net_name][side]
+		lc = (lx0 + lx1) // 2
+
+		py0 = (box.yMin() // self.snap) * self.snap
+		py1 = -((-box.yMax()) // self.snap) * self.snap
+
+		x0 = (min(box.xMin(), lx0) // self.snap) * self.snap
+		x1 = -((-max(box.xMax(), lc)) // self.snap) * self.snap
+
+		rect = (x0, py0, x1, py1)
+		other = self._conflict(net_name, rect)
+		if other is not None:
+			print(f'PadPowerStraps: {net_name} {side} strap skipped, '
+				f'would touch {other}')
+			return False
+
+		via = self._via_for(min(lx1 - lx0, x1 - x0), py1 - py0)
+		self._add(
+			self.reader.block.findNet(net_name),
+			[rect],
+			via,
+			(lc, (py0 + py1) // 2),
+		)
+		return True
+
+	def _strap_edge(self, net_name, side, box):
+		band = int(self.BAND_Y[net_name] * self.dbu)
+		if side == 't':
+			band = self.y1 - band
+		band_h = int(self.BAND_H * self.dbu)
+
+		pc = (box.xMin() + box.xMax()) // 2
+		lane = min(
+			('l', 'r'),
+			key=lambda s: abs(
+				(self.lanes[net_name][s][0] + self.lanes[net_name][s][1]) // 2 - pc
+			),
+		)
+		lx0, lx1 = self.lanes[net_name][lane]
+		lc = (lx0 + lx1) // 2
+
+		px0 = (box.xMin() // self.snap) * self.snap
+		px1 = -((-box.xMax()) // self.snap) * self.snap
+
+		# Jog from the pad pin to the band, then the run to the lane.
+		jy0 = min(box.yMin() // self.snap * self.snap, band)
+		jy1 = max(box.yMax() // self.snap * self.snap, band + band_h)
+		jog = (px0, jy0, px1, jy1)
+
+		rx0 = min(px0, lc)
+		rx1 = max(px1, lc)
+		run = (rx0, band, rx1, band + band_h)
+
+		for r in (jog, run):
+			other = self._conflict(net_name, r)
+			if other is not None:
+				print(f'PadPowerStraps: {net_name} {side} strap skipped, '
+					f'would touch {other}')
+				return False
+
+		via = self._via_for(lx1 - lx0, band_h)
+		self._add(
+			self.reader.block.findNet(net_name),
+			[jog, run],
+			via,
+			(lc, band + band_h // 2),
+		)
+		return True
+
+	def run(self):
+		n_side = n_edge = n_skip = 0
+
+		for net_name in self.NETS:
+			net = self.reader.block.findNet(net_name)
+			if net is None:
+				continue
+			if net_name not in self.lanes:
+				print(f'PadPowerStraps: no ring lane for {net_name}, skipping')
+				continue
+
+			for bterm in net.getBTerms():
+				for bpin in bterm.getBPins():
+					for box in bpin.getBoxes():
+						try:
+							ly = box.getTechLayer().getName()
+						except (AttributeError, TypeError):
+							continue
+						if ly != 'Metal3':
+							continue
+
+						r = (box.xMin(), box.yMin(), box.xMax(), box.yMax())
+
+						if r[0] < self.x0:
+							side = 'l'
+						elif r[2] > self.x1:
+							side = 'r'
+						elif r[1] < self.y0:
+							side = 'b'
+						elif r[3] > self.y1:
+							side = 't'
+						else:
+							continue
+
+						if side in ('l', 'r'):
+							ok = self._strap_side(net_name, side, box)
+							n_side += int(ok)
+						else:
+							ok = self._strap_edge(net_name, side, box)
+							n_edge += int(ok)
+						n_skip += int(not ok)
+
+		print(f'PadPowerStraps: {n_side} side straps, {n_edge} edge straps, '
+			f'{n_skip} skipped')
 
 
 class RingPowerStrapper:
@@ -2256,6 +2602,11 @@ def route(
 	p = ModulePowerStrapper(reader, tti)
 	p.run()
 
+	# Add well taps next to the placed logic. This must run before the rails
+	# are built so a tap shares the power pin run of the cell it abuts.
+	p = WellTaps(reader)
+	p.run()
+
 	# Power the top level standard cells
 	p = StdCellPower(reader)
 	p.run()
@@ -2265,14 +2616,18 @@ def route(
 	p = RingTie(reader)
 	p.run()
 
-	# The generated grid does not need extra margin spines: every net's
-	# Metal5 stripes already terminate on that net's core ring, and
-	# add_pdn_ring -connect_to_pads reaches the edge pins with Metal3 stubs.
-	# A vertical spine in the die margin cannot work here: it would sit
-	# outside the stripes' x extent, so its Via4 lands on no stripe, and the
-	# margin lanes are crossed by the three concentric rings (vapwr outermost,
-	# vgnd, then vdpwr), which the spine would short against. An earlier
-	# version did exactly that and tied vdpwr, vgnd and vapwr together.
+	# Connect the wrapper's power pins to the ring (pdngen's -connect_to_pads
+	# does not produce usable geometry here)
+	p = PadPowerStraps(reader)
+	p.run()
+
+	# No margin spines: a vertical Metal4 spine in the die margin cannot work
+	# here. Each net's Metal5 stripes only extend as far as that net's ring, so
+	# a spine outside the ring lands on no stripe at all, and the margin is
+	# crossed by the three concentric rings (vapwr outermost, then vgnd, then
+	# vdpwr). An earlier version did exactly that and shorted all three
+	# supplies together. The ring lanes are tied up by RingTie instead, and
+	# PadPowerStraps takes the pins to those lanes.
 
 	# Create the ring power straps
 	p = RingPowerStrapper(reader)
