@@ -1155,15 +1155,18 @@ class MacroPowerVias:
 					for w in sw.getWires():
 						if not w.isVia():
 							continue
-						pts.append(((w.xMin() + w.xMax()) // 2,
-							(w.yMin() + w.yMax()) // 2))
+						# Keep the whole footprint (pdngen uses 4x4 arrays
+						# that are microns wide), plus a margin.
+						pts.append((w.xMin() - 400, w.yMin() - 400,
+							w.xMax() + 400, w.yMax() + 400))
 			self.existing[name] = pts
 
 	def _claim_via(self, net_name, x, y):
 		# Two vias whose cut arrays overlap are merged differently by the two
 		# streamers (1nm slivers). Keep one per net per location.
-		for vx, vy in self.existing.get(net_name, ()):
-			if abs(vx - x) < 2000 and abs(vy - y) < 2000:
+		for x0, y0, x1, y1 in self.existing.get(net_name, ()):
+			if (x0 <= x + 400) and (x1 >= x - 400) and \
+					(y0 <= y + 400) and (y1 >= y - 400):
 				return False
 		for vx, vy in self.used.get(net_name, ()):
 			if abs(vx - x) < 2000 and abs(vy - y) < 2000:
