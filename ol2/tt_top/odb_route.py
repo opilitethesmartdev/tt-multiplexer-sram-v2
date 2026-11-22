@@ -1223,6 +1223,7 @@ class StdCellPower:
 		n_rails = 0
 		n_risers = 0
 		n_skipped = 0
+		n_degenerate = 0
 
 		for key in sorted(rows):
 			spans, y0, y1 = rows[key]
@@ -1244,12 +1245,18 @@ class StdCellPower:
 			runs.append((cx0, cx1))
 
 			for x0, x1 in runs:
+				# A degenerate shape (zero width/height after snapping) is
+				# enough to crash TritonRoute while it parses the nets, so
+				# drop those instead of emitting them.
+				rx0, rx1 = self._snap_lo(x0), self._snap_hi(x1)
+				ry0, ry1 = self._snap_lo(y0), self._snap_hi(y1)
+				if (rx1 - rx0) <= 0 or (ry1 - ry0) <= 0:
+					n_degenerate += 1
+					continue
+
 				sw = odb.dbSWire.create(net, "ROUTED")
 				odb.createSBoxes(sw, self.rail_ly, [
-					odb.Rect(
-						self._snap_lo(x0), self._snap_lo(y0),
-						self._snap_hi(x1), self._snap_hi(y1),
-					)
+					odb.Rect(rx0, ry0, rx1, ry1)
 				], "STRIPE")
 				n_rails += 1
 
@@ -1268,19 +1275,23 @@ class StdCellPower:
 
 				yvia = self._snap_lo(yc)
 				yriser = self._snap_hi(riser)
+				ya, yb = min(yvia, yriser), max(yvia, yriser)
+				if (yb - ya) < self.riser_w:
+					ym = (ya + yb) // 2
+					ya = ym - self.riser_w // 2
+					yb = ya + self.riser_w
+
 				sw = odb.dbSWire.create(net, "ROUTED")
 				odb.createSBoxes(sw, self.riser_ly, [
-					odb.Rect(
-						x - self.riser_w // 2, min(yvia, yriser),
-						x + self.riser_w // 2, max(yvia, yriser),
-					)
+					odb.Rect(x - self.riser_w // 2, ya, x + self.riser_w // 2, yb)
 				], "STRIPE")
 				for vg in (self.v12, self.v23, self.v34):
 					odb.createSBoxes(sw, vg.get(1, 1), [odb.Point(x, yvia)], "STRIPE")
 				odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, yriser)], "STRIPE")
 				n_risers += 1
 
-		print(f'StdCellPower: {n_rails} rails, {n_risers} risers, {n_skipped} without a path')
+		print(f'StdCellPower: {n_rails} rails, {n_risers} risers, '
+			f'{n_skipped} without a path, {n_degenerate} degenerate')
 
 
 class RingPowerStrapper:
