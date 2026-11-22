@@ -1128,19 +1128,6 @@ class StdCellPower:
 		# everything we draw to it.
 		self.snap = max(reader.block.getDbUnitsPerMicron() // 200, 1)
 
-		# Row grouping for the rails: use the spacing between the DEF rows.
-		origins = set()
-		for row in reader.block.getRows():
-			origin = row.getOrigin()
-			origins.add(origin.y() if hasattr(origin, 'y') else origin[1])
-		origins = sorted(origins)
-		if len(origins) >= 2:
-			self.row_pitch = min(b - a for a, b in zip(origins, origins[1:]) if b > a)
-			self.row_base = origins[0]
-		else:
-			self.row_pitch = 1
-			self.row_base = 0
-
 		self.macros = [
 			inst.getBBox()
 				for inst in reader.block.getInsts()
@@ -1177,9 +1164,10 @@ class StdCellPower:
 
 	def _runs(self):
 		# Collect the cells' Metal1 power pin shapes, grouped per net and per
-		# site row. The pins of a cell row are collinear, and merging per row
-		# keeps the rail count (and therefore the riser/via count) small.
-		rows = {}
+		# site row. The pins of a cell row are collinear (within a fraction of
+		# a micron) while rows are a site pitch apart, so cluster them by y
+		# instead of relying on the DEF row metadata.
+		per_net = {}
 		for inst in self.reader.block.getInsts():
 			if not inst.getMaster().getName().startswith('gf180mcu_fd_sc_'):
 				continue
@@ -1193,12 +1181,27 @@ class StdCellPower:
 					layer, r = geom[0], geom[1]
 					if hasattr(layer, 'getName') and layer.getName() != 'Metal1':
 						continue
-					yc = (r.yMin() + r.yMax()) // 2
-					key = (net.getName(), (yc - self.row_base) // self.row_pitch)
-					item = rows.setdefault(key, [[], r.yMin(), r.yMax()])
-					item[0].append((r.xMin(), r.xMax()))
-					item[1] = min(item[1], r.yMin())
-					item[2] = max(item[2], r.yMax())
+					per_net.setdefault(net.getName(), []).append(
+						(r.yMin(), r.yMax(), r.xMin(), r.xMax())
+					)
+
+		rows = {}
+		for net_name, rects in per_net.items():
+			rects.sort(key=lambda t: (t[0] + t[1]) // 2)
+			clusters = []
+			for y0, y1, x0, x1 in rects:
+				yc = (y0 + y1) // 2
+				if clusters:
+					c = clusters[-1]
+					if abs(((c[1] + c[2]) // 2) - yc) <= 2000:
+						c[0].append((x0, x1))
+						c[1] = min(c[1], y0)
+						c[2] = max(c[2], y1)
+						continue
+				clusters.append([[(x0, x1)], y0, y1])
+
+			for idx, (spans, y0, y1) in enumerate(clusters):
+				rows[(net_name, idx)] = (spans, y0, y1)
 		return rows
 
 	def run(self):
