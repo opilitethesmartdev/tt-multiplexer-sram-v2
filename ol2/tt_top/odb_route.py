@@ -1222,7 +1222,28 @@ class MacroPowerVias:
 				sw = odb.dbSWire.create(net, "ROUTED")
 			odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(xk, y)], "STRIPE")
 			placed_here += 1
-		return 1 if placed_here else 0
+		if placed_here:
+			return 1
+
+		# No stripe crosses this pin (a mux's VDPWR/VGND pins are horizontal
+		# strips that can fall between two stripes). Run a short Metal4 jog to
+		# the nearest same-net stripe and put the via there.
+		st = self._nearest_stripe(net.getName(), (r.yMin() + r.yMax()) // 2)
+		if st is None:
+			return 0
+		xj = self._snap((r.xMin() + r.xMax()) // 2)
+		y0 = self._snap((r.yMin() + r.yMax()) // 2)
+		y1 = self._snap((st[1] + st[3]) // 2)
+		if y0 == y1:
+			return 0
+		if not self._claim_via(net.getName(), xj, y1):
+			return 0
+		sw = odb.dbSWire.create(net, "ROUTED")
+		odb.createSBoxes(sw, self.m4, [
+			odb.Rect(xj - 400, min(y0, y1), xj + 400, max(y0, y1)),
+		], "STRIPE")
+		odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(xj, y1)], "STRIPE")
+		return 1
 
 	def _m3_pin(self, net, r, idx):
 		st = self._nearest_stripe(net.getName(), (r.yMin() + r.yMax()) // 2)
@@ -1523,7 +1544,7 @@ class StdCellPower:
 
 		for side, end in ((1, rx1 - m1_half_w), (-1, rx0 + m1_half_w)):
 			xv = self._snap_lo(end) if side > 0 else self._snap_hi(end)
-			for d in range(1, 41):
+			for d in range(1, 91):
 				xh = self._snap_lo(xv + side * d * lane)
 
 				hx0 = min(xv, xh) - self.riser_w // 2
@@ -2065,12 +2086,17 @@ class PadPowerStraps:
 		sits just inside the die edge, inside the power pad's y range), so the
 		full-height stub would short to it. Use the tallest clear part instead.
 		"""
+		# Keep a full Metal3 spacing to the neighbouring pins: butting right
+		# against them produced "pad_raw[55] to vdpwr" spacing violations at
+		# the die edge (pad_raw[55] is the clock).
+		margin = 1000
+
 		blocked = []
 		for other, r in self.pins:
 			if other == net_name:
 				continue
 			if (min(x1, r[2]) > max(x0, r[0])) and (min(y1, r[3]) > max(y0, r[1])):
-				blocked.append((max(y0, r[1]), min(y1, r[3])))
+				blocked.append((max(y0, r[1]) - margin, min(y1, r[3]) + margin))
 
 		if not blocked:
 			return (y0, y1)

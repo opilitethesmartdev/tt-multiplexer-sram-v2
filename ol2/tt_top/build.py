@@ -660,7 +660,7 @@ if __name__ == '__main__':
 		# when the router cannot converge. A healthy run terminates on its
 		# own once there are no violations left, so cap the failure case to
 		# keep CI iteration time bounded.
-		"DRT_OPT_ITERS"         : 16,
+		"DRT_OPT_ITERS"         : 32,
 		# The remaining routing DRCs sit in a very small congested pocket at
 		# the SRAM address pins. Metal4 alone does not give the router enough
 		# room to escape there; Metal5 carries only the power stripes.
