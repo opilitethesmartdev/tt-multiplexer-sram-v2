@@ -466,7 +466,13 @@ if __name__ == '__main__':
 		"MAGIC_DRC_USE_GDS": True,
 
 		# LVS
-		"MAGIC_DEF_LABELS" : False,
+		# The wrapper has several pads per power pin (one DEF PORT each) and
+		# several pins per domain. Without DEF labels Magic creates one port
+		# per PORT, uniquifies the duplicates as "*_uq0/1/2" and the layout
+		# pin list no longer matches the netlist's (114 vs 88 pins); netgen
+		# then has to "alter pin lists to match", which merges nets. Reading
+		# the DEF labels gives Magic one port per pin name.
+		"MAGIC_DEF_LABELS" : True,
 		"MAGIC_EXT_SHORT_RESISTOR" : True, # Fixes LVS failures when more than two pins are connected to the same net
 		"IGNORE_DISCONNECTED_MODULES": disc_modules,
 
