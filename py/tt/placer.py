@@ -98,6 +98,14 @@ class ModulePlacer:
 		self.cfg = cfg
 		self.verbose = verbose
 
+		# Branches allowed to carry the shared SRAM sideband
+		sram = getattr(self.cfg.tt, 'sram', None)
+		branches = sram.get('branches', None) if sram is not None else None
+		if branches:
+			self.sram_branches = set(int(b) for b in branches)
+		else:
+			self.sram_branches = set(range(self.cfg.tt.grid.y))
+
 		# Current place mode
 		self.missing_fill = False
 
@@ -262,6 +270,15 @@ class ModulePlacer:
 					(mod.pos_y >= self.cfg.tt.grid.y)
 				):
 				raise RuntimeError(f"Module '{mod.name:s}' has invalid Y position {mod.pos_y:d}")
+
+			# SRAM support is only routed to a subset of branches
+			if mod.uses_sram and (mod.pos_x is not None) and (mod.pos_y is not None):
+				if mod.mux_id not in self.sram_branches:
+					raise RuntimeError(
+						f"Module '{mod.name:s}' declares uses_sram but is placed in "
+						f"mux {mod.mux_id:d}, which does not carry the SRAM sideband "
+						f"(enabled branches: {sorted(self.sram_branches)})"
+					)
 
 	def save_modules(self, mod_file):
 		data = {

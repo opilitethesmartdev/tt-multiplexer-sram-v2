@@ -42,6 +42,11 @@ module tt_top #(
 	localparam integer N_SRAM_OW = `TT_SRAM_OW;
 	localparam integer N_SRAM_IW = `TT_SRAM_IW;
 
+	// Branches whose mux carries the shared SRAM sideband. The rest keep the
+	// plain mux and leave the sideband unconnected, which keeps ~79 wires per
+	// disabled branch out of the routing problem.
+	localparam [G_Y-1:0] SRAM_MASK = `TT_SRAM_MASK;
+
 	localparam integer S_OW = N_O + N_IO * 2 + 2;
 	localparam integer S_IW = N_I + N_IO + 9 + 1 + 2;
 
@@ -291,13 +296,22 @@ module tt_top #(
 			// Spine connection
 			if (i & 1) begin
 				assign spine_top_ow = l_spine_ow;
-				assign spine_top_sram_ow = l_sram_ow;
 				assign l_spine_iw = spine_top_iw;
+				if (SRAM_MASK[i])
+					assign spine_top_sram_ow = l_sram_ow;
 			end else begin
 				assign spine_bot_ow = l_spine_ow;
-				assign spine_bot_sram_ow = l_sram_ow;
 				assign l_spine_iw = spine_bot_iw;
+				if (SRAM_MASK[i])
+					assign spine_bot_sram_ow = l_sram_ow;
 			end
+
+			// A branch without SRAM support gets its sideband inputs tied to
+			// the mux's own zero constant, so nothing floats and the
+			// shared read bus is not routed to it.
+			wire [N_SRAM_IW-1:0] l_sram_iw = SRAM_MASK[i]
+				? sram_iw
+				: {N_SRAM_IW{l_k_zero}};
 
 			// Branch Mux
 			(* blackbox *)
@@ -323,7 +337,7 @@ module tt_top #(
 				.spine_ow  (l_spine_ow),
 				.spine_iw  (l_spine_iw),
 				.sram_ow   (l_sram_ow),
-				.sram_iw   (sram_iw),
+				.sram_iw   (l_sram_iw),
 				.addr      (l_addr),
 				.k_one     (l_k_one),
 				.k_zero    (l_k_zero)

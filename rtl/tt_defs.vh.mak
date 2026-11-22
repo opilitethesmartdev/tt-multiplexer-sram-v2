@@ -29,6 +29,17 @@ sram_ow = sram_addr + sram_data + sram_wmask + 2
 `define TT_SRAM_OW    ${sram_ow}
 `define TT_SRAM_IW    ${sram_data}
 
+<%
+sram_mask = (1 << cfg.tt.grid.y) - 1
+if sram is not None:
+	branches = sram.get('branches', None)
+	if branches:
+		sram_mask = 0
+		for mux_id in branches:
+			sram_mask |= 1 << int(mux_id)
+%>
+`define TT_SRAM_MASK ${cfg.tt.grid.y}'h${'{:X}'.format(sram_mask)}
+
 `define TT_TECH_${cfg.pdk.tech.upper()}
 
 `ifdef TT_TECH_SKY130
