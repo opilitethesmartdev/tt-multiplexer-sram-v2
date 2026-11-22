@@ -2939,7 +2939,20 @@ def route(
 	r.create_k01_obs()
 	r.route_pad()
 	r.route_um_tieoffs()
-	r.route_um_signals()
+
+	# NOTE: route_um_signals() is deliberately NOT called.
+	#
+	# It draws one vertical Metal4 wire per user-module connection, at the x
+	# of the mux's pin and spanning the mux/module bbox overlap. That assumes
+	# the sky130 layout, where a module's pin sits directly above the mux pin
+	# it belongs to. In this tile the two are not vertically aligned, so the
+	# wire is a 4um stub at the spine that touches neither pin - and because a
+	# net with any fixed wire is treated as pre-routed, TritonRoute then leaves
+	# the net alone. The result was that only 5 of 64 module inputs were
+	# connected at all (and those to the wrong mux slot).
+	#
+	# These are ordinary two-pin nets whose connectivity is already correct in
+	# the DEF, so let the router route them.
 
 	# Create the module power straps
 	p = ModulePowerStrapper(reader, tti)
