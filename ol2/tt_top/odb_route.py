@@ -733,6 +733,9 @@ class Router:
 
 
 
+_VIA_API_DUMPED = False
+
+
 class ViaGenerator:
 
 	def __init__(self, reader, via_rule_name):
@@ -822,7 +825,14 @@ class ViaGenerator:
 			built = True
 			print(f'ViaGenerator: explicit via {name} ({ncols}x{nrows})')
 		except Exception as e:  # noqa: BLE001 - fall back to the generate rule
-			print(f'ViaGenerator: explicit via {name} failed ({e!r}), using generate rule')
+			global _VIA_API_DUMPED
+			if not _VIA_API_DUMPED:
+				_VIA_API_DUMPED = True
+				print(f'ViaGenerator: explicit via {name} failed ({e!r}), using generate rule')
+				print('  dbVia methods: ' +
+					str([m for m in dir(v) if not m.startswith('_')]))
+				print('  odb box helpers: ' +
+					str([m for m in dir(odb) if 'box' in m.lower() or 'rect' in m.lower()]))
 
 		if built:
 			return v
