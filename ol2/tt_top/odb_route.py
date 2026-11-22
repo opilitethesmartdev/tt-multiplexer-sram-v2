@@ -1141,6 +1141,8 @@ class MacroPowerVias:
 			self.stripes[name] = rects
 
 		self.used = {}
+		self.reasons = {'no_stripe': 0, 'too_small': 0, 'claimed': 0,
+			'jogged': 0, 'loose': 0}
 
 		# Vias already placed on these nets (by pdngen, the module strapper or
 		# StdCellPower). Two vias 0.2um apart are electrically harmless (same
@@ -1161,7 +1163,7 @@ class MacroPowerVias:
 							w.xMax() + 400, w.yMax() + 400))
 			self.existing[name] = pts
 
-	def _claim_via(self, net_name, x, y):
+	def _claim_via(self, net_name, x, y, keep=2000):
 		# Two vias whose cut arrays overlap are merged differently by the two
 		# streamers (1nm slivers). Keep one per net per location.
 		for x0, y0, x1, y1 in self.existing.get(net_name, ()):
@@ -1169,7 +1171,7 @@ class MacroPowerVias:
 					(y0 <= y + 400) and (y1 >= y - 400):
 				return False
 		for vx, vy in self.used.get(net_name, ()):
-			if abs(vx - x) < 2000 and abs(vy - y) < 2000:
+			if abs(vx - x) < keep and abs(vy - y) < keep:
 				return False
 		self.used.setdefault(net_name, []).append((x, y))
 		return True
@@ -1193,10 +1195,12 @@ class MacroPowerVias:
 			if best is None or area > best[0]:
 				best = (area, ox, oy, st)
 		if best is None:
-			return 0
+			self.reasons['no_stripe'] += 1
+			return self._jog_m4(net, r)
 		_, ox, oy, st = best
 		if ox < self.min_m4[0] or oy < self.min_m4[1]:
-			return 0
+			self.reasons['too_small'] += 1
+			return self._jog_m4(net, r)
 		# The via must sit on the manufacturing grid: Magic streams GDS on a
 		# 5nm grid while KLayout keeps 1nm, so a half-grid centre puts every
 		# cut edge on a 2.5nm coordinate and the two streams disagree by 1nm
@@ -1217,6 +1221,7 @@ class MacroPowerVias:
 		for k in range(n):
 			xk = self._snap(lo_x + (hi_x - lo_x) * k // max(1, n - 1) if n > 1 else x)
 			if not self._claim_via(net.getName(), xk, y):
+				self.reasons['claimed'] += 1
 				continue
 			if sw is None:
 				sw = odb.dbSWire.create(net, "ROUTED")
@@ -1225,9 +1230,22 @@ class MacroPowerVias:
 		if placed_here:
 			return 1
 
-		# No stripe crosses this pin (a mux's VDPWR/VGND pins are horizontal
-		# strips that can fall between two stripes). Run a short Metal4 jog to
-		# the nearest same-net stripe and put the via there.
+		# Nothing accepted with the strict keep-out. A pin left unconnected is
+		# worse than a cut that shares a location with another cut of the same
+		# net (which only costs an XOR sliver), so retry with a 3um keep-out.
+		if self._claim_via(net.getName(), x, y, keep=6000):
+			sw = odb.dbSWire.create(net, "ROUTED")
+			odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, y)], "STRIPE")
+			self.reasons['loose'] += 1
+			return 1
+
+		# The via candidates were all rejected; fall back to a jog.
+		return self._jog_m4(net, r)
+
+	def _jog_m4(self, net, r):
+		# No stripe crosses this pin (a mux's VDPWR/VGND pins are strips that
+		# can fall between two stripes). Run a short Metal4 jog to the nearest
+		# same-net stripe and put the via there.
 		st = self._nearest_stripe(net.getName(), (r.yMin() + r.yMax()) // 2)
 		if st is None:
 			return 0
@@ -1237,12 +1255,14 @@ class MacroPowerVias:
 		if y0 == y1:
 			return 0
 		if not self._claim_via(net.getName(), xj, y1):
+			self.reasons['claimed'] += 1
 			return 0
 		sw = odb.dbSWire.create(net, "ROUTED")
 		odb.createSBoxes(sw, self.m4, [
 			odb.Rect(xj - 400, min(y0, y1), xj + 400, max(y0, y1)),
 		], "STRIPE")
 		odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(xj, y1)], "STRIPE")
+		self.reasons['jogged'] += 1
 		return 1
 
 	def _m3_pin(self, net, r, idx):
@@ -1303,7 +1323,7 @@ class MacroPowerVias:
 						idx += 1
 
 		print(f'MacroPowerVias: {n4} Metal4 pins and {n3} Metal3 pins tied '
-			f'to the stripes')
+			f'to the stripes, reasons={self.reasons}')
 
 
 class WellTaps:
