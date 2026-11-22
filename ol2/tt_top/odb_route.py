@@ -1359,7 +1359,7 @@ class PdnMarginSpines:
 		return sorted(ys)
 
 	def _pins(self, net):
-		# Edge power pins: (layer name, rect) pairs
+		# Edge power pins as (layer name, x0, y0, x1, y1)
 		rv = []
 		for bterm in self.reader.block.getBTerms():
 			bn = bterm.getNet()
@@ -1369,10 +1369,9 @@ class PdnMarginSpines:
 				for box in bpin.getBoxes():
 					try:
 						ly = box.getTechLayer().getName()
-						r = box.getBox()
-					except AttributeError:
+						rv.append((ly, box.xMin(), box.yMin(), box.xMax(), box.yMax()))
+					except (AttributeError, TypeError):
 						continue
-					rv.append((ly, r))
 		return rv
 
 	def run(self):
@@ -1402,17 +1401,17 @@ class PdnMarginSpines:
 					n_via45 += 1
 
 				# Reach the edge pins on this side with a Metal3 stub
-				for ly, r in self._pins(net):
-					pin_mid = (r.xMin() + r.xMax()) // 2
+				for ly, px0, py0, px1, py1 in self._pins(net):
+					pin_mid = (px0 + px1) // 2
 					if (pin_mid < mid) != (side == 'l'):
 						continue
-					ya = min(r.yMin(), r.yMax())
-					yb = max(r.yMin(), r.yMax())
+					ya = min(py0, py1)
+					yb = max(py0, py1)
 					ya = (ya // self.snap) * self.snap
 					yb = ((yb + self.snap - 1) // self.snap) * self.snap
 
-					xa = min(r.xMin(), x) - self.snap
-					xb = max(r.xMax(), x) + self.snap
+					xa = min(px0, x) - self.snap
+					xb = max(px1, x) + self.snap
 
 					lyr = self.reader.db.getTech().findLayer(ly)
 					sw2 = odb.dbSWire.create(net, "ROUTED")
