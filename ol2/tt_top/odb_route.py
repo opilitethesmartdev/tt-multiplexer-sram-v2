@@ -1140,7 +1140,16 @@ class MacroPowerVias:
 						rects.append((w.xMin(), w.yMin(), w.xMax(), w.yMax()))
 			self.stripes[name] = rects
 
-		self.used = set()
+		self.used = {}
+
+	def _claim_via(self, net_name, x, y):
+		# Two vias whose cut arrays overlap are merged differently by the two
+		# streamers (1nm slivers). Keep one per net per location.
+		for vx, vy in self.used.get(net_name, ()):
+			if abs(vx - x) < 2000 and abs(vy - y) < 2000:
+				return False
+		self.used.setdefault(net_name, []).append((x, y))
+		return True
 
 	def _nearest_stripe(self, name, y):
 		best = None
@@ -1165,15 +1174,17 @@ class MacroPowerVias:
 		_, ox, oy, st = best
 		if ox < self.min_m4[0] or oy < self.min_m4[1]:
 			return 0
-		x = (max(r.xMin(), st[0]) + min(r.xMax(), st[2])) // 2
-		y = (max(r.yMin(), st[1]) + min(r.yMax(), st[3])) // 2
+		# The via must sit on the manufacturing grid: Magic streams GDS on a
+		# 5nm grid while KLayout keeps 1nm, so a half-grid centre puts every
+		# cut edge on a 2.5nm coordinate and the two streams disagree by 1nm
+		# all around the cut (hundreds of XOR slivers).
+		x = self._snap((max(r.xMin(), st[0]) + min(r.xMax(), st[2])) // 2)
+		y = self._snap((max(r.yMin(), st[1]) + min(r.yMax(), st[3])) // 2)
 		via = self.v45.get4sz_ext(ox, oy, bot_fit='xy', top_fit='xy')
 		if via is None:
 			return 0
-		key = (net.getName(), x, y)
-		if key in self.used:
+		if not self._claim_via(net.getName(), x, y):
 			return 0
-		self.used.add(key)
 		sw = odb.dbSWire.create(net, "ROUTED")
 		odb.createSBoxes(sw, via, [odb.Point(x, y)], "STRIPE")
 		return 1
@@ -1189,16 +1200,14 @@ class MacroPowerVias:
 		if x < r.xMin() + 400 or x > r.xMax() - 400:
 			x = (r.xMin() + r.xMax()) // 2
 
-		y0 = (r.yMin() + r.yMax()) // 2
-		y1 = (st[1] + st[3]) // 2
+		y0 = self._snap((r.yMin() + r.yMax()) // 2)
+		y1 = self._snap((st[1] + st[3]) // 2)
 
 		via3 = self.v34.get(1, 1)
 		via4 = self.v45.get(1, 1)
 
-		key = (net.getName(), 'm3', x, y0, y1)
-		if key in self.used:
+		if not self._claim_via(net.getName(), x, y1):
 			return 0
-		self.used.add(key)
 
 		# 0.8um wide, so the Via4 enclosure (0.76um) sits inside it.
 		sw = odb.dbSWire.create(net, "ROUTED")
