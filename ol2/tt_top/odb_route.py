@@ -1294,6 +1294,138 @@ class StdCellPower:
 			f'{n_skipped} without a path, {n_degenerate} degenerate')
 
 
+class PdnMarginSpines:
+
+	"""Tie the Metal5 stripes together and reach the chip power pins.
+
+	Two things the generated PDN does not do on GF180:
+
+	* pdngen emits the core ring in segments. The gaps sit at the same y
+	  positions regardless of the ring offset, so the Metal5 stripes have no
+	  reliable vertical tie and PDNSim reports thousands of islands.
+	* `add_pdn_ring -connect_to_pads` never reaches the wrapper's power pins.
+	  They are BPins on Metal3 at x=-2..0.3, and PDNSim keeps listing them as
+	  unconnected shapes. With no source connected, it then reports the whole
+	  net (11708 shapes on vdpwr).
+
+	The die margin is macro-free for the full height, so draw the missing
+	vertical Metal4 spines there, tie every Metal5 stripe of the same net to
+	them with a Via4, and reach the edge pins with a Metal3 stub and a Via3.
+	"""
+
+	NETS = ('vdpwr', 'vgnd')
+
+	def __init__(self, reader):
+		self.reader = reader
+
+		tech = reader.db.getTech()
+		self.grid = tech.getManufacturingGrid()
+		self.m4 = tech.findLayer('Metal4')
+
+		self.v34 = ViaGenerator(reader, 'Via3_GEN_HH')
+		self.v45 = ViaGenerator(reader, 'Via4_GEN_HH')
+
+		self.width = 8750 * reader.block.getDbUnitsPerMicron() // 1000
+
+		die = reader.block.getDieArea()
+		if hasattr(die, 'xMin'):
+			self.x0, self.x1 = die.xMin(), die.xMax()
+			self.y0, self.y1 = die.yMin(), die.yMax()
+		else:
+			self.x0, self.y0, self.x1, self.y1 = [int(v) for v in die]
+
+		self.snap = max(reader.block.getDbUnitsPerMicron() // 200, 1)
+
+		# Spine x per (net, side): keep clear of the core ring (x 32..56 left)
+		# and of the edge pin metal (x -2..0.3).
+		off = 10000 * reader.block.getDbUnitsPerMicron() // 1000
+		offg = 21000 * reader.block.getDbUnitsPerMicron() // 1000
+		self.spines = {
+			('vdpwr', 'l'): self.x0 + off,
+			('vgnd',  'l'): self.x0 + offg,
+			('vdpwr', 'r'): self.x1 - off,
+			('vgnd',  'r'): self.x1 - offg,
+		}
+
+	def _stripes(self, net):
+		ys = set()
+		for sw in net.getSWires():
+			for w in sw.getWires():
+				if w.isVia():
+					continue
+				if w.getTechLayer().getName() != 'Metal5':
+					continue
+				ys.add((w.yMin() + w.yMax()) // 2)
+		return sorted(ys)
+
+	def _pins(self, net):
+		# Edge power pins: (layer name, rect) pairs
+		rv = []
+		for bterm in self.reader.block.getBTerms():
+			bn = bterm.getNet()
+			if bn is None or bn.getName() != net.getName():
+				continue
+			for bpin in bterm.getBPins():
+				for box in bpin.getBoxes():
+					try:
+						ly = box.getTechLayer().getName()
+						r = box.getBox()
+					except AttributeError:
+						continue
+					rv.append((ly, r))
+		return rv
+
+	def run(self):
+		mid = (self.x0 + self.x1) // 2
+		n_spine = n_via45 = n_pad = 0
+
+		for net_name in self.NETS:
+			net = self.reader.block.findNet(net_name)
+			if net is None:
+				continue
+			stripes = self._stripes(net)
+
+			for side in ('l', 'r'):
+				x = self.spines[(net_name, side)]
+				x = (x // self.snap) * self.snap
+
+				# Vertical spine over the full die height
+				sw = odb.dbSWire.create(net, "ROUTED")
+				odb.createSBoxes(sw, self.m4, [
+					odb.Rect(x - self.width // 2, self.y0, x + self.width // 2, self.y1)
+				], "STRIPE")
+				n_spine += 1
+
+				# Tie every stripe of this net to the spine
+				for y in stripes:
+					odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, y)], "STRIPE")
+					n_via45 += 1
+
+				# Reach the edge pins on this side with a Metal3 stub
+				for ly, r in self._pins(net):
+					pin_mid = (r.xMin() + r.xMax()) // 2
+					if (pin_mid < mid) != (side == 'l'):
+						continue
+					ya = min(r.yMin(), r.yMax())
+					yb = max(r.yMin(), r.yMax())
+					ya = (ya // self.snap) * self.snap
+					yb = ((yb + self.snap - 1) // self.snap) * self.snap
+
+					xa = min(r.xMin(), x) - self.snap
+					xb = max(r.xMax(), x) + self.snap
+
+					lyr = self.reader.db.getTech().findLayer(ly)
+					sw2 = odb.dbSWire.create(net, "ROUTED")
+					odb.createSBoxes(sw2, lyr, [odb.Rect(xa, ya, xb, yb)], "STRIPE")
+					# Via up to the spine at the pad's centre
+					yv = (ya + yb) // 2
+					yv = (yv // self.snap) * self.snap
+					odb.createSBoxes(sw2, self.v34.get(1, 1), [odb.Point(x, yv)], "STRIPE")
+					n_pad += 1
+
+		print(f'PdnMarginSpines: {n_spine} spines, {n_via45} stripe vias, {n_pad} pad connections')
+
+
 class RingPowerStrapper:
 
 	def __init__(self, reader):
@@ -2025,6 +2157,10 @@ def route(
 
 	# Power the top level standard cells
 	p = StdCellPower(reader)
+	p.run()
+
+	# Tie the power grid together and to the edge pins
+	p = PdnMarginSpines(reader)
 	p.run()
 
 	# Create the ring power straps
