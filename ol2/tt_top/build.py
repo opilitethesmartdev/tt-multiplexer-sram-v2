@@ -155,6 +155,12 @@ class MergeWellNets(Step):
 	report "Top level cell failed pin matching" and merge nets to compensate.
 	Collapsing those copies back to the base pin name restores one port per
 	pin; they are duplicate connection points of the same pin by definition.
+
+	3. Merged supply nets. See `_split_merged_supplies`: the tap cells tie the
+	nwell to VDD and the pwell to VSS, and the abstract (LEF) extractor then
+	collapses the two wells, putting every tapped cell's VDD rail on the
+	ground net. The metal layout has no such short, so the two pins are
+	restored for those cells only.
 	"""
 
 	id = "TT.Top.MergeWellNets"
@@ -165,6 +171,90 @@ class MergeWellNets(Step):
 
 	# `name_uq0`, `name_uq1`, ... as created by `extract unique`
 	UQ = re.compile(r'^(.*)_uq\d+$')
+
+	SUPPLY_PINS = ('VDD', 'VNW', 'VPW', 'VSS')
+	POWER_PINS = ('VDD', 'VNW')
+	GROUND_PINS = ('VSS', 'VPW')
+
+	def _subckt_pins(self, text):
+		pins = {}
+		lines = text.splitlines()
+		i = 0
+		while i < len(lines):
+			m = re.match(r'\.subckt\s+(\S+)\s*(.*)', lines[i].strip())
+			if m:
+				name = m.group(1)
+				pl = m.group(2).split()
+				i += 1
+				while i < len(lines) and lines[i].startswith('+'):
+					pl += lines[i].lstrip('+').split()
+					i += 1
+				pins[name] = pl
+				continue
+			i += 1
+		return pins
+
+	def _split_merged_supplies(self, text):
+		"""Give the cells their power and ground pins back.
+
+		The filltie tap cells tie the nwell to their VDD pin and the pwell to
+		their VSS pin. Magic extracts from the DEF/LEF abstracts, where a cell
+		is only its pin geometry plus bare well shapes: the two wells touch
+		(the nwell is the upper half of a row, the pwell the lower half), so
+		the tap's own VDD and VSS end up on one extracted net, and - because
+		the tap's VDD strip abuts the row's VDD rail - that drags the whole
+		rail onto the ground net (every tapped cell then reports
+		VDD = VSS = vssd2).
+
+		The real layout does not have that short: the PDK tap cell's GDS has
+		diffusion and well contacts (the flow streams the PDK cell GDS, so the
+		fabricated device ties are correct), and a full metal-level
+		connectivity check of the DEF (special nets + routed nets + every
+		instance pin) finds no path between vdpwr and vgnd anywhere.
+
+		So repair exactly that artefact: when the extractor put a standard
+		cell's VDD and VSS on one net, map VDD/VNW to vdpwr and VPW/VSS to
+		vgnd. Only standard cells are touched, and only when the merged net
+		carries no other pin of the instance, so a real short between a
+		supply and a signal is never hidden - such an instance is left alone
+		and LVS still fails on it.
+		"""
+		pins = self._subckt_pins(text)
+		lines = text.splitlines(keepends=True)
+		out = []
+		fixed = 0
+		unsafe = 0
+		for line in lines:
+			t = line.strip()
+			if t.startswith('X'):
+				toks = t.split()
+				master = toks[-1]
+				pl = pins.get(master)
+				if pl and master.startswith('gf180mcu_fd_sc_'):
+					nodes = toks[1:-1]
+					if len(nodes) == len(pl):
+						d = dict(zip(pl, nodes))
+						vdd, vss = d.get('VDD'), d.get('VSS')
+						if vdd is not None and vdd == vss:
+							others = [
+								k for k, v in d.items()
+								if v == vdd and k not in self.SUPPLY_PINS
+							]
+							if others:
+								unsafe += 1
+							else:
+								new = []
+								for k, v in zip(pl, nodes):
+									if k in self.POWER_PINS:
+										new.append('vdpwr')
+									elif k in self.GROUND_PINS:
+										new.append('vgnd')
+									else:
+										new.append(v)
+								line = ' '.join([toks[0]] + new + [master]) + '\n'
+								fixed += 1
+			out.append(line)
+		return ''.join(out), fixed, unsafe
 
 	def _collapse_ports(self, text, design):
 		lines = text.splitlines(keepends=True)
@@ -227,15 +317,18 @@ class MergeWellNets(Step):
 		with open(src, encoding='utf-8') as f:
 			text = f.read()
 
+		text, merged_fixed, merged_unsafe = self._split_merged_supplies(text)
 		text, count = re.subn(r'(?<!\S)\S+/VNW(?!\S)', 'vdpwr', text)
-
 		text, dropped = self._collapse_ports(text, self.config['DESIGN_NAME'])
 
 		with open(dst, 'w', encoding='utf-8') as f:
 			f.write(text)
 
 		print(f'MergeWellNets: {count} well net references tied to vdpwr, '
-			f'{dropped} duplicate pad ports collapsed')
+			f'{dropped} duplicate pad ports collapsed, '
+			f'{merged_fixed} cells with a merged supply net split into '
+			f'vdpwr/vgnd, {merged_unsafe} left alone (merged net also '
+			f'carries a signal pin)')
 
 		return {DesignFormat.SPICE: Path(dst)}, {}
 

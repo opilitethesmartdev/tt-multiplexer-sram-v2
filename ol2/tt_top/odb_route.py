@@ -1290,6 +1290,62 @@ class StdCellPower:
 				if (y1 > bb.yMin()) and (y0 < bb.yMax())
 		]
 
+	def _rect_blocked(self, x0, y0, x1, y1):
+		# Would a Metal4 rectangle hit a macro ?
+		for bb in self.macros:
+			if (bb.xMin() < x1) and (bb.xMax() > x0) and \
+					(bb.yMin() < y1) and (bb.yMax() > y0):
+				return True
+		return False
+
+	def _rect_conflict(self, net_name, x0, y0, x1, y1, placed):
+		# Same as _riser_conflict but for an arbitrary rectangle (the placed
+		# entries already carry a lane of margin in x).
+		for pnet, px0, px1, py0, py1 in placed:
+			if pnet == net_name:
+				continue
+			if (px0 < x1) and (px1 > x0) and (py0 < y1) and (py1 > y0):
+				return True
+		return False
+
+	def _sideways_riser(self, net_name, rx0, rx1, ry0, ry1, yc, stripe_ys,
+			placed, lane, m1_half_w):
+		"""Connect a rail that has no vertical path (e.g. boxed in by macros).
+
+		The row between the two SRAMs has a macro directly above and below,
+		so a purely vertical Metal4 riser cannot leave it. Run sideways on
+		Metal4 inside the rail's own band (which carries only this net's
+		strips) to a column with a clear vertical path, then go up to a
+		stripe of the same net.
+		"""
+		band_h = max(ry1 - ry0, self.riser_w)
+		yv = self._snap_lo(yc)
+		by = (yv - band_h // 2, yv + band_h // 2)
+
+		for side, end in ((1, rx1 - m1_half_w), (-1, rx0 + m1_half_w)):
+			xv = self._snap_lo(end) if side > 0 else self._snap_hi(end)
+			for d in range(1, 41):
+				xh = self._snap_lo(xv + side * d * lane)
+
+				hx0 = min(xv, xh) - self.riser_w // 2
+				hx1 = max(xv, xh) + self.riser_w // 2
+				if self._rect_blocked(hx0, by[0], hx1, by[1]):
+					continue
+				if self._rect_conflict(net_name, hx0, by[0], hx1, by[1], placed):
+					continue
+
+				for yt in sorted(stripe_ys, key=lambda y: abs(y - yc)):
+					if self._path_blocked(xh, min(by[1], yt), max(by[0], yt)):
+						continue
+
+					yriser = self._snap_hi(yt)
+					ya, yb = min(by[0], yriser), max(by[1], yriser)
+					if self._riser_conflict(net_name, xh, ya, yb, placed, lane):
+						continue
+
+					return (xv, yv, xh, yriser, by, ya, yb)
+		return None
+
 	def _riser_conflict(self, net_name, x, ya, yb, placed, lane):
 		# Special wiring is not checked by the router, so a riser of one net
 		# crossing a riser of the other would short vdpwr to vgnd in layout
@@ -1470,6 +1526,7 @@ class StdCellPower:
 		n_risers = 0
 		n_skipped = 0
 		n_conflict = 0
+		n_sideways = 0
 
 		for net_name, rx0, ry0, rx1, ry1 in rails:
 			net = self.reader.block.findNet(net_name)
@@ -1531,6 +1588,29 @@ class StdCellPower:
 					break
 
 			if found is None:
+				side = self._sideways_riser(
+					net_name, rx0, rx1, ry0, ry1, yc,
+					stripes[net_name], placed, lane, m1_half_w,
+				)
+				if side is not None:
+					xv, yv, xh, yriser, by, ya, yb = side
+					sw = odb.dbSWire.create(net, "ROUTED")
+					odb.createSBoxes(sw, self.riser_ly, [
+						odb.Rect(min(xv, xh) - self.riser_w // 2, by[0],
+							max(xv, xh) + self.riser_w // 2, by[1]),
+						odb.Rect(xh - self.riser_w // 2, min(by[0], yriser),
+							xh + self.riser_w // 2, max(by[1], yriser)),
+					], "STRIPE")
+					for vg in (self.v12, self.v23, self.v34):
+						odb.createSBoxes(sw, vg.get(1, 1), [odb.Point(xv, yv)], "STRIPE")
+					odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(xh, yriser)], "STRIPE")
+					placed.append((net_name, min(xv, xh) - lane // 2,
+						max(xv, xh) + lane // 2, ya, yb))
+					n_sideways += 1
+					n_risers += 1
+					continue
+
+			if found is None:
 				n_skipped += 1
 				continue
 
@@ -1553,9 +1633,9 @@ class StdCellPower:
 
 			n_risers += 1
 
-		print(f'StdCellPower: {n_rails} rails, {n_risers} risers, '
-			f'{n_skipped} without a path, {n_conflict} lane conflicts, '
-			f'{n_degenerate} degenerate')
+		print(f'StdCellPower: {n_rails} rails, {n_risers} risers '
+			f'({n_sideways} sideways), {n_skipped} without a path, '
+			f'{n_conflict} lane conflicts, {n_degenerate} degenerate')
 
 
 class RingTie:
