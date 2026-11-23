@@ -1196,6 +1196,14 @@ class MacroPowerVias:
 			self.reasons['no_stripe'] += 1
 			return 0
 		_, ox, oy, st = best
+		if getattr(self, '_short', 0) < 8:
+			self._short = getattr(self, '_short', 0) + 1
+			w = (r.xMax() - r.xMin()) / self.dbu
+			h = (r.yMax() - r.yMin()) / self.dbu
+			print(f'MacroPowerVias._m4_pin master={self._cur_master} '
+				f'net={net.getName()} pin {w:.2f}x{h:.2f}um '
+				f'overlap ox={ox/self.dbu:.2f} oy={oy/self.dbu:.2f} '
+				f'min_m4={self.min_m4[0]/self.dbu:.2f}x{self.min_m4[1]/self.dbu:.2f}')
 		if ox < self.min_m4[0] or oy < self.min_m4[1]:
 			self.reasons['too_small'] += 1
 			return 0
@@ -1276,8 +1284,11 @@ class MacroPowerVias:
 		# router cannot see - 27 of them cost 3500 net mismatches when the
 		# router happened to route across them.
 		done_m3 = set()
+		self._short = 0
+		self._cur_master = None
 		for inst in self.reader.block.getInsts():
 			master = inst.getMaster().getName()
+			self._cur_master = master
 			if master.startswith(STDCELL_PREFIXES):
 				continue
 			idx = 0
