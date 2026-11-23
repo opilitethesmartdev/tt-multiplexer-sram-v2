@@ -3018,6 +3018,15 @@ def route(
 	r.create_macro_obs()
 	r.route_um_tieoffs()
 
+	# Tie the hardened macros' power pins to the Metal5 stripes. This runs
+	# first: every later step (module straps, std-cell risers) also drops vias
+	# onto vdpwr/vgnd/vapwr, and MacroPowerVias' keep-out refuses to stack a
+	# via where one already sits. Doing it first means the macro pins - which
+	# are otherwise unpowered in silicon - are tied before those vias exist,
+	# instead of every candidate being rejected as "claimed".
+	p = MacroPowerVias(reader)
+	p.run()
+
 	# Create the module power straps
 	p = ModulePowerStrapper(reader, tti)
 	p.run()
@@ -3029,10 +3038,6 @@ def route(
 
 	# Power the top level standard cells
 	p = StdCellPower(reader)
-	p.run()
-
-	# Tie the hardened macros' power pins to the Metal5 stripes
-	p = MacroPowerVias(reader)
 	p.run()
 
 	# Make the (segmented) core ring continuous, so the Metal5 stripes are not
