@@ -1643,10 +1643,22 @@ class StdCellPower:
 		return (y0, y1)
 
 	def _runs(self):
-		# Collect the cells' Metal1 power pin shapes, grouped per net and per
-		# site row. The pins of a cell row are collinear (within a fraction of
-		# a micron) while rows are a site pitch apart, so cluster them by y
-		# instead of relying on the DEF row metadata.
+		"""Abutment-strip runs, grouped per net and per site row.
+
+		The GF180 VDD/VSS pins are combs: a ~0.6um-tall abutment strip at the
+		cell boundary plus narrow fingers reaching into the cell. Only the
+		strip is the row rail; the fingers are interior metal. Clustering
+		every decomposed rectangle by y (as this used to) turns each finger
+		into its own "rail" - a ~0.3um strip that can never hold a via - and
+		that was 619 of the 629 rails reported "without a path".
+
+		So reduce each cell's pin to its abutment strip first (per cell, not
+		per row: a row mixes cell widths, and picking the band from the
+		widest cell's geometry drops the narrow cells' strips), then cluster
+		the strips into row rails.
+		"""
+		strip_h = 600 * self.reader.block.getDbUnitsPerMicron() // 1000
+
 		per_net = {}
 		for inst in self.reader.block.getInsts():
 			if not inst.getMaster().getName().startswith('gf180mcu_fd_sc_'):
@@ -1657,15 +1669,23 @@ class StdCellPower:
 					continue
 				if net.getName() not in self.NETS:
 					continue
+				rects = []
 				for geom in it.getGeometries():
 					layer, r = geom[0], geom[1]
 					if hasattr(layer, 'getName') and layer.getName() != 'Metal1':
 						continue
-					per_net.setdefault(net.getName(), []).append(
+					rects.append(
 						(r.yMin(), r.yMax(), r.xMin(), r.xMax())
 					)
-
-		strip_h = 600 * self.reader.block.getDbUnitsPerMicron() // 1000
+				if not rects:
+					continue
+				band = self._strip_band(rects, strip_h)
+				keep = [
+					r for r in rects
+						if min(r[1], band[1]) > max(r[0], band[0])
+				]
+				if keep:
+					per_net.setdefault(net.getName(), []).extend(keep)
 
 		rows = {}
 		for net_name, rects in per_net.items():
@@ -1683,12 +1703,8 @@ class StdCellPower:
 				clusters.append([r[0], r[1], [r]])
 
 			for idx, (cy0, cy1, rs) in enumerate(clusters):
-				band = self._strip_band(rs, strip_h)
-				spans = [
-					(x0, x1) for (y0, y1, x0, x1) in rs
-						if min(y1, band[1]) > max(y0, band[0])
-				]
-				rows[(net_name, idx)] = (spans, band[0], band[1])
+				spans = [(x0, x1) for (y0, y1, x0, x1) in rs]
+				rows[(net_name, idx)] = (spans, cy0, cy1)
 		return rows
 
 	def run(self):
