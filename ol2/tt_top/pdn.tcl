@@ -76,18 +76,29 @@ add_pdn_ring \
     -core_offset "$::env(FP_PDN_CORE_RING_VOFFSET) $::env(FP_PDN_CORE_RING_HOFFSET)" \
     -connect_to_pads -connect_to_pad_layers Metal3
 
-# Macro connections
+# Macro connections.
 #
-# Deliberately none here. pdngen connects a macro pin to the Metal5 stripes by
-# dropping a generate-rule via array sized from the pin, and these macros'
-# power pins are up to 17um wide strips, so it produced 17.7 x 3.1um Via4
-# arrays on Metal4. That geometry is special/fixed, i.e. invisible to
-# TritonRoute, which then ran the module's signal nets straight through them
-# (11 Metal4.Short violations between uio_oe[0] and vgnd).
+# pdngen connects a macro pin to the Metal5 stripes with a generate-rule via
+# array sized from the pin. That works well for the muxes and the controller
+# (their power pins are long strips far from any signal pin), and it is what
+# keeps the extracted netlist clean: without it the supply nets fragment.
 #
-# Macro power pins are connected in TT.Top.CustomRoute instead
-# (MacroPowerVias: single-cut Via4s inside the pin, plus a short Metal4 jog for
-# pins that fall between two stripes), which the router can route around.
+# The user modules are excluded (`tt_um_*`): their power pins are 17um wide
+# strips on the same edge as their signal pins, so the arrays it produced there
+# (17.7 x 3.1um) sat right where uio_oe[0] has to escape, and TritonRoute -
+# which cannot see special/fixed geometry - ran the signal straight through
+# them (7 Metal4.Short). Their power pins are connected by MacroPowerVias in
+# TT.Top.CustomRoute with single-cut vias instead.
+define_pdn_grid \
+    -macro \
+    -name macro \
+    -cells "^(tt_(ctrl|mux|pg)(_.*)?)$" \
+    -starts_with POWER \
+    -halo "$::env(FP_PDN_HORIZONTAL_HALO) $::env(FP_PDN_VERTICAL_HALO)"
+
+add_pdn_connect \
+    -grid macro \
+    -layers "$::env(FP_PDN_VERTICAL_LAYER) $::env(FP_PDN_HORIZONTAL_LAYER)"
 
 # The Arrakeen SRAM's vdd/vss pins are Metal3 strips that interleave every
 # 0.5-27um, so a Metal4 strap over the macro (what this grid used to draw)

@@ -1141,12 +1141,33 @@ class MacroPowerVias:
 
 		self.seen = set()
 		self.reasons = {'no_stripe': 0, 'too_small': 0, 'claimed': 0,
-			'jogged': 0, 'loose': 0}
+			'jogged': 0}
 
-	def _claim_via(self, net_name, x, y, keep=0):
-		# One via per net per location. Exact-coordinate dedupe is enough here:
-		# a macro's power pins are hundreds of microns apart, and the only
-		# coincident case is the same pin seen twice.
+		# Vias already on these nets: pdngen's macro arrays and ring/stripe
+		# vias, ModulePowerStrapper's gated-domain straps, StdCellPower's
+		# risers. Where one already sits, do not add ours on top - overlapping
+		# cuts are merged differently by Magic (5nm GDS grid) and KLayout
+		# (1nm), which is a 1nm XOR sliver for every cut.
+		self.existing = {}
+		for _name in self.NETS:
+			_net = reader.block.findNet(_name)
+			_boxes = []
+			if _net is not None:
+				for _sw in _net.getSWires():
+					for _w in _sw.getWires():
+						if not _w.isVia():
+							continue
+						_boxes.append((_w.xMin() - 400, _w.yMin() - 400,
+							_w.xMax() + 400, _w.yMax() + 400))
+			self.existing[_name] = _boxes
+
+	def _claim_via(self, net_name, x, y):
+		for x0, y0, x1, y1 in self.existing.get(net_name, ()):
+			if (x0 <= x + 400) and (x1 >= x - 400) and \
+					(y0 <= y + 400) and (y1 >= y - 400):
+				return False
+		# A macro's power pins are hundreds of microns apart, so an exact
+		# coordinate is a fine identity for our own placements.
 		key = (net_name, x, y)
 		if key in self.seen:
 			return False
@@ -1173,11 +1194,11 @@ class MacroPowerVias:
 				best = (area, ox, oy, st)
 		if best is None:
 			self.reasons['no_stripe'] += 1
-			return self._jog_m4(net, r)
+			return 0
 		_, ox, oy, st = best
 		if ox < self.min_m4[0] or oy < self.min_m4[1]:
 			self.reasons['too_small'] += 1
-			return self._jog_m4(net, r)
+			return 0
 		# The via must sit on the manufacturing grid: Magic streams GDS on a
 		# 5nm grid while KLayout keeps 1nm, so a half-grid centre puts every
 		# cut edge on a 2.5nm coordinate and the two streams disagree by 1nm
@@ -1207,60 +1228,7 @@ class MacroPowerVias:
 		if placed_here:
 			return 1
 
-		# The via candidates were all rejected; fall back to a jog.
-		return self._jog_m4(net, r)
-
-	def _jog_m4(self, net, r):
-		# No stripe crosses this pin (a mux's VDPWR/VGND pins are strips that
-		# can fall between two stripes). Run a short Metal4 jog to the nearest
-		# same-net stripe and put the via there.
-		st = self._nearest_stripe(net.getName(), (r.yMin() + r.yMax()) // 2)
-		if st is None:
-			return 0
-		xj = self._snap((r.xMin() + r.xMax()) // 2)
-		y0 = self._snap((r.yMin() + r.yMax()) // 2)
-		y1 = self._snap((st[1] + st[3]) // 2)
-		if y0 == y1:
-			return 0
-		if not self._claim_via(net.getName(), xj, y1):
-			self.reasons['claimed'] += 1
-			return 0
-		sw = odb.dbSWire.create(net, "ROUTED")
-		odb.createSBoxes(sw, self.m4, [
-			odb.Rect(xj - 400, min(y0, y1), xj + 400, max(y0, y1)),
-		], "STRIPE")
-		odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(xj, y1)], "STRIPE")
-		self.reasons['jogged'] += 1
-		return 1
-
-	def _m3_pin(self, net, r, idx):
-		st = self._nearest_stripe(net.getName(), (r.yMin() + r.yMax()) // 2)
-		if st is None:
-			return 0
-
-		# Jog near the pin's end: the SRAM's signal pins are on the left
-		# edge, so the far end is clear.
-		x = self._snap(r.xMax() - (idx + 1) * 1200)
-		if x < r.xMin() + 400 or x > r.xMax() - 400:
-			x = (r.xMin() + r.xMax()) // 2
-
-		y0 = self._snap((r.yMin() + r.yMax()) // 2)
-		y1 = self._snap((st[1] + st[3]) // 2)
-
-		via3 = self.v34.get(1, 1)
-		via4 = self.v45.get(1, 1)
-
-		if not self._claim_via(net.getName(), x, y1):
-			return 0
-
-		# 0.8um wide, so the Via4 enclosure (0.76um) sits inside it.
-		sw = odb.dbSWire.create(net, "ROUTED")
-		odb.createSBoxes(sw, self.m4, [
-			odb.Rect(x - 400, min(y0, y1), x + 400, max(y0, y1)),
-		], "STRIPE")
-		odb.createSBoxes(sw, via3, [odb.Point(x, y0)], "STRIPE")
-		odb.createSBoxes(sw, via4, [odb.Point(x, y1)], "STRIPE")
-		return 1
+		return 0
 
 	def _snap(self, v):
 		return (v // self.grid) * self.grid
