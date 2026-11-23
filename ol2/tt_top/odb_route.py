@@ -1230,6 +1230,38 @@ class MacroPowerVias:
 
 		return 0
 
+	def _m3_pin(self, net, r, idx):
+		# A Metal3 power pin (the Arrakeen SRAM's interleaved vdd/vss strips):
+		# Via3 up to Metal4, a short Metal4 jog to the nearest same-net Metal5
+		# stripe, and a Via4 there. The jog crosses other strips of the macro
+		# on Metal3, but without a via that is not a connection, and the same
+		# net's own stripe is where it lands.
+		st = self._nearest_stripe(net.getName(), (r.yMin() + r.yMax()) // 2)
+		if st is None:
+			return 0
+
+		# Jog near the pin's end: the SRAM's signal pins are on the left
+		# edge, so the far end is clear.
+		x = self._snap(r.xMax() - (idx + 1) * 1200)
+		if x < r.xMin() + 400 or x > r.xMax() - 400:
+			x = (r.xMin() + r.xMax()) // 2
+
+		y0 = self._snap((r.yMin() + r.yMax()) // 2)
+		y1 = self._snap((st[1] + st[3]) // 2)
+
+		if not self._claim_via(net.getName(), x, y1):
+			self.reasons['claimed'] += 1
+			return 0
+
+		# 0.8um wide, so the Via4 enclosure (0.76um) sits inside it.
+		sw = odb.dbSWire.create(net, "ROUTED")
+		odb.createSBoxes(sw, self.m4, [
+			odb.Rect(x - 400, min(y0, y1), x + 400, max(y0, y1)),
+		], "STRIPE")
+		odb.createSBoxes(sw, self.v34.get(1, 1), [odb.Point(x, y0)], "STRIPE")
+		odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, y1)], "STRIPE")
+		return 1
+
 	def _snap(self, v):
 		return (v // self.grid) * self.grid
 
