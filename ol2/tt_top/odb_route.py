@@ -1165,14 +1165,33 @@ class MacroPowerVias:
 		for x0, y0, x1, y1 in self.existing.get(net_name, ()):
 			if (x0 <= x + 400) and (x1 >= x - 400) and \
 					(y0 <= y + 400) and (y1 >= y - 400):
+				self._diag_claim(net_name, x, y, 'existing', x0, y0, x1, y1)
 				return False
 		# A macro's power pins are hundreds of microns apart, so an exact
 		# coordinate is a fine identity for our own placements.
 		key = (net_name, x, y)
 		if key in self.seen:
+			self._diag_claim(net_name, x, y, 'seen')
 			return False
 		self.seen.add(key)
 		return True
+
+	def _diag_claim(self, net_name, x, y, why, x0=0, y0=0, x1=0, y1=0):
+		n = getattr(self, '_diag_n', 0)
+		if n < 12:
+			self._diag_n = n + 1
+			import collections
+			cnt = getattr(self, '_diag_cnt', collections.Counter())
+			cnt[why] += 1
+			self._diag_cnt = cnt
+			if why == 'existing':
+				print(f'MacroPowerVias.claim reject {why} net={net_name} '
+					f'cand=({x/self.dbu:.2f},{y/self.dbu:.2f}) '
+					f'existing=({x0/self.dbu:.2f},{y0/self.dbu:.2f})-'
+					f'({x1/self.dbu:.2f},{y1/self.dbu:.2f})')
+			else:
+				print(f'MacroPowerVias.claim reject {why} net={net_name} '
+					f'cand=({x/self.dbu:.2f},{y/self.dbu:.2f})')
 
 	def _nearest_stripe(self, name, y):
 		best = None
@@ -1318,7 +1337,8 @@ class MacroPowerVias:
 						idx += 1
 
 		print(f'MacroPowerVias: {n4} Metal4 pins and {n3} Metal3 pins tied '
-			f'to the stripes, reasons={self.reasons}')
+			f'to the stripes, reasons={self.reasons}, '
+			f'existing_vias={ {k: len(v) for k, v in self.existing.items()} }')
 
 
 class WellTaps:
@@ -3018,15 +3038,6 @@ def route(
 	r.create_macro_obs()
 	r.route_um_tieoffs()
 
-	# Tie the hardened macros' power pins to the Metal5 stripes. This runs
-	# first: every later step (module straps, std-cell risers) also drops vias
-	# onto vdpwr/vgnd/vapwr, and MacroPowerVias' keep-out refuses to stack a
-	# via where one already sits. Doing it first means the macro pins - which
-	# are otherwise unpowered in silicon - are tied before those vias exist,
-	# instead of every candidate being rejected as "claimed".
-	p = MacroPowerVias(reader)
-	p.run()
-
 	# Create the module power straps
 	p = ModulePowerStrapper(reader, tti)
 	p.run()
@@ -3038,6 +3049,10 @@ def route(
 
 	# Power the top level standard cells
 	p = StdCellPower(reader)
+	p.run()
+
+	# Tie the hardened macros' power pins to the Metal5 stripes
+	p = MacroPowerVias(reader)
 	p.run()
 
 	# Make the (segmented) core ring continuous, so the Metal5 stripes are not
