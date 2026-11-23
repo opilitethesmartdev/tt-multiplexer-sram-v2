@@ -1762,6 +1762,9 @@ class StdCellPower:
 		n_skipped = 0
 		n_conflict = 0
 		n_sideways = 0
+		n_narrow = 0
+		n_blocked = 0
+		n_sideways_fail = 0
 
 		for net_name, rx0, ry0, rx1, ry1 in rails:
 			net = self.reader.block.findNet(net_name)
@@ -1773,6 +1776,7 @@ class StdCellPower:
 			hi = self._snap_lo(rx1 - m1_half_w)
 			if hi < lo:
 				n_skipped += 1
+				n_narrow += 1
 				continue
 
 			kmax = (hi - lo) // lane
@@ -1823,6 +1827,7 @@ class StdCellPower:
 					break
 
 			if found is None:
+				n_blocked += 1
 				side = self._sideways_riser(
 					net_name, rx0, rx1, ry0, ry1, yc,
 					stripes[net_name], placed, lane, m1_half_w,
@@ -1847,6 +1852,7 @@ class StdCellPower:
 
 			if found is None:
 				n_skipped += 1
+				n_sideways_fail += 1
 				continue
 
 			x, yvia, yriser, ya, yb = found
@@ -1866,7 +1872,9 @@ class StdCellPower:
 			n_risers += 1
 
 		print(f'StdCellPower: {n_rails} rails, {n_risers} risers '
-			f'({n_sideways} sideways), {n_skipped} without a path, '
+			f'({n_sideways} sideways), {n_skipped} without a path '
+			f'(narrow {n_narrow}, no vertical path {n_blocked}, '
+			f'sideways failed {n_sideways_fail}), '
 			f'{n_conflict} lane conflicts, {n_degenerate} degenerate')
 
 
