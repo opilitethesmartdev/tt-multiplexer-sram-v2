@@ -1286,17 +1286,12 @@ class MacroPowerVias:
 					ly = layer.getName()
 					if ly == 'Metal4':
 						n4 += self._m4_pin(net, r)
-						# The router does not treat another net's pins as
-						# obstacles, and these are special-net power pins, so
-						# it happily routes signal nets over them - that is
-						# where the uio_oe[0] <-> vgnd shorts came from.
-						# Block exactly the pin (not the whole macro) so the
-						# surrounding signal pins stay reachable.
-						odb.dbObstruction_create(
-							self.reader.block, layer,
-							r.xMin() - 200, r.yMin() - 200,
-							r.xMax() + 200, r.yMax() + 200,
-						)
+						# NOTE: do not obstruct the pin here. On the user
+						# modules the power pins sit on the same edge as the
+						# signal pins, so a pin-shaped obstruction also covers
+						# the signal pin next to it (uio_oe[0]) and leaves the
+						# net with no legal escape at all - the router then
+						# reports obstruction violations instead of shorts.
 					elif ly == 'Metal3':
 						n3 += self._m3_pin(net, r, idx)
 						idx += 1
