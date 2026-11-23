@@ -1270,6 +1270,12 @@ class MacroPowerVias:
 
 		n4 = 0
 		n3 = 0
+		# One Metal3 connection per (instance, net) is enough: a macro's power
+		# strips are the same net inside the macro. Each one needs a long
+		# Metal4 jog to reach a stripe, and that jog is special geometry the
+		# router cannot see - 27 of them cost 3500 net mismatches when the
+		# router happened to route across them.
+		done_m3 = set()
 		for inst in self.reader.block.getInsts():
 			master = inst.getMaster().getName()
 			if master.startswith(STDCELL_PREFIXES):
@@ -1293,7 +1299,11 @@ class MacroPowerVias:
 						# net with no legal escape at all - the router then
 						# reports obstruction violations instead of shorts.
 					elif ly == 'Metal3':
-						n3 += self._m3_pin(net, r, idx)
+						key = (inst.getName(), net.getName())
+						if key not in done_m3:
+							if self._m3_pin(net, r, idx):
+								done_m3.add(key)
+								n3 += 1
 						idx += 1
 
 		print(f'MacroPowerVias: {n4} Metal4 pins and {n3} Metal3 pins tied '
