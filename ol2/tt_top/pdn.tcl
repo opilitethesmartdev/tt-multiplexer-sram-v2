@@ -92,7 +92,7 @@ add_pdn_ring \
 define_pdn_grid \
     -macro \
     -name macro \
-    -cells "^(tt_(ctrl|mux|pg)(_.*)?)$" \
+    -cells "^(tt_(ctrl|mux|pg|um|asw)(_.*)?)$" \
     -starts_with POWER \
     -halo "$::env(FP_PDN_HORIZONTAL_HALO) $::env(FP_PDN_VERTICAL_HALO)"
 
