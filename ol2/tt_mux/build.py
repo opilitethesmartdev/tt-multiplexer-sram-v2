@@ -142,9 +142,11 @@ if __name__ == '__main__':
 		# LVS extracted every mux's VDPWR as a floating per-branch net
 		# (branch[N].check_mask.mux_I/VDPWR) that never merged with the
 		# global vdpwr grid - the three remaining LVS errors.
-		# Write the LEF from the GDS so the power pins carry their real port.
+		# Write the LEF from the GDS so the power pins carry their real port,
+		# but keep PINONLY so the macro does not also export its full
+		# obstruction geometry (that over-constrained the parent router).
 		"MAGIC_LEF_WRITE_USE_GDS" : True,
-		"MAGIC_WRITE_LEF_PINONLY" : False,
+		"MAGIC_WRITE_LEF_PINONLY" : True,
 
 		# LVS
 		"MAGIC_DEF_LABELS": True,			# Keep VDPWR/VGND port labels for the parent LVS

@@ -163,9 +163,10 @@ if __name__ == '__main__':
 		# As in tt_mux: the sky130-era GDS=False workaround left the
 		# VDPWR/VGND pins without their GDS port shapes on GF180, so the
 		# parent tt_top LVS saw a floating tt_ctrl/VDPWR. Write the LEF from
-		# the GDS and keep the port labels.
+		# the GDS (keep PINONLY so the full obstruction geometry is not
+		# exported and over-constrains the parent router).
 		"MAGIC_LEF_WRITE_USE_GDS" : True,
-		"MAGIC_WRITE_LEF_PINONLY" : False,
+		"MAGIC_WRITE_LEF_PINONLY" : True,
 
 		# LVS
 		"MAGIC_DEF_LABELS": True,			# Keep VDPWR/VGND port labels for the parent LVS
