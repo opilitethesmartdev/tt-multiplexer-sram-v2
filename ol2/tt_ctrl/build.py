@@ -160,11 +160,15 @@ if __name__ == '__main__':
 		"RT_MAX_LAYER"  : "Metal4",
 
 		# LEF generation option
-		"MAGIC_LEF_WRITE_USE_GDS" : False,	# Workaround LEF/GDS pin naming issue
-		"MAGIC_WRITE_LEF_PINONLY" : True,
+		# As in tt_mux: the sky130-era GDS=False workaround left the
+		# VDPWR/VGND pins without their GDS port shapes on GF180, so the
+		# parent tt_top LVS saw a floating tt_ctrl/VDPWR. Write the LEF from
+		# the GDS and keep the port labels.
+		"MAGIC_LEF_WRITE_USE_GDS" : True,
+		"MAGIC_WRITE_LEF_PINONLY" : False,
 
 		# LVS
-		"MAGIC_DEF_LABELS": False,			# Avoid exporting useless internal labels
+		"MAGIC_DEF_LABELS": True,			# Keep VDPWR/VGND port labels for the parent LVS
 	}
 
 	flow = CtrlFlow(
