@@ -1158,14 +1158,18 @@ class MacroPowerVias:
 							continue
 						_boxes.append((_w.xMin() - 400, _w.yMin() - 400,
 							_w.xMax() + 400, _w.yMax() + 400))
-						# The via is special/fixed and invisible to
-						# TritonRoute, which then routes signals straight
-						# through it (the uio_oe[0] <-> vgnd Metal4.Short).
-						# Obstruct the via's Metal4 footprint so the router
-						# goes around it instead.
-						odb.dbObstruction_create(self.reader.block, self.m4,
-							_w.xMin() - 400, _w.yMin() - 400,
-							_w.xMax() + 400, _w.yMax() + 400)
+						# pdngen's giant Via4 arrays (17x3 cuts) are
+						# special/fixed geometry invisible to TritonRoute,
+						# which then routes signals straight through them
+						# (the uio_oe[0] <-> vgnd Metal4.Short). Obstruct only
+						# the large multi-cut arrays; the 1x1 riser vias are
+						# too small to swallow a signal run and obstructing
+						# them only removed routing resources (DRC went 10->12).
+						if (_w.xMax() - _w.xMin()) > 6000 or \
+								(_w.yMax() - _w.yMin()) > 6000:
+							odb.dbObstruction_create(self.reader.block, self.m4,
+								_w.xMin() - 400, _w.yMin() - 400,
+								_w.xMax() + 400, _w.yMax() + 400)
 			self.existing[_name] = _boxes
 
 	def _nearest_stripe(self, name, y):
@@ -1175,17 +1179,6 @@ class MacroPowerVias:
 			if best is None or d < best[0]:
 				best = (d, st)
 		return best[1] if best is not None else None
-
-	def _pin_powered(self, net_name, r):
-		"""True if an existing via (pdngen's macro array, a std-cell riser,
-		etc.) already sits on this pin rect. A pin with a via on it is already
-		tied to the grid; stacking another cut inside it is what produces the
-		1nm XOR slivers (Magic merges cuts, KLayout keeps them)."""
-		for x0, y0, x1, y1 in self.existing.get(net_name, ()):
-			if (x0 < r.xMax()) and (x1 > r.xMin()) and \
-					(y0 < r.yMax()) and (y1 > r.yMin()):
-				return True
-		return False
 
 	def _m4_pin(self, net, r):
 		best = None
@@ -1204,17 +1197,6 @@ class MacroPowerVias:
 		if ox < self.min_m4[0] or oy < self.min_m4[1]:
 			self.reasons['too_small'] += 1
 			return 0
-
-		# If this pin already carries a via, it is powered: nothing to add,
-		# and stacking a cut would XOR. (The point-based keep-out this used to
-		# run rejected *every* candidate because pdngen's arrays and StdCellPower
-		# risers sit on the same shared stripe at the pin's y, hundreds of um
-		# away in x - but the keep-out only compared points, so it rejected
-		# pins that have no via on them at all, leaving the whole macro set
-		# unpowered.)
-		if self._pin_powered(net.getName(), r):
-			self.reasons['claimed'] += 1
-			return 1
 
 		# A via must sit on the manufacturing grid: Magic streams GDS on a 5nm
 		# grid while KLayout keeps 1nm, so a half-grid centre puts the cut edge
