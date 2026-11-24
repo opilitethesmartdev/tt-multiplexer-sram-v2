@@ -1139,7 +1139,6 @@ class MacroPowerVias:
 						rects.append((w.xMin(), w.yMin(), w.xMax(), w.yMax()))
 			self.stripes[name] = rects
 
-		self.seen = set()
 		self.reasons = {'no_stripe': 0, 'too_small': 0, 'claimed': 0,
 			'jogged': 0}
 
@@ -1161,38 +1160,6 @@ class MacroPowerVias:
 							_w.xMax() + 400, _w.yMax() + 400))
 			self.existing[_name] = _boxes
 
-	def _claim_via(self, net_name, x, y):
-		for x0, y0, x1, y1 in self.existing.get(net_name, ()):
-			if (x0 <= x + 400) and (x1 >= x - 400) and \
-					(y0 <= y + 400) and (y1 >= y - 400):
-				self._diag_claim(net_name, x, y, 'existing', x0, y0, x1, y1)
-				return False
-		# A macro's power pins are hundreds of microns apart, so an exact
-		# coordinate is a fine identity for our own placements.
-		key = (net_name, x, y)
-		if key in self.seen:
-			self._diag_claim(net_name, x, y, 'seen')
-			return False
-		self.seen.add(key)
-		return True
-
-	def _diag_claim(self, net_name, x, y, why, x0=0, y0=0, x1=0, y1=0):
-		n = getattr(self, '_diag_n', 0)
-		if n < 12:
-			self._diag_n = n + 1
-			import collections
-			cnt = getattr(self, '_diag_cnt', collections.Counter())
-			cnt[why] += 1
-			self._diag_cnt = cnt
-			if why == 'existing':
-				print(f'MacroPowerVias.claim reject {why} net={net_name} '
-					f'cand=({x/self.dbu:.2f},{y/self.dbu:.2f}) '
-					f'existing=({x0/self.dbu:.2f},{y0/self.dbu:.2f})-'
-					f'({x1/self.dbu:.2f},{y1/self.dbu:.2f})')
-			else:
-				print(f'MacroPowerVias.claim reject {why} net={net_name} '
-					f'cand=({x/self.dbu:.2f},{y/self.dbu:.2f})')
-
 	def _nearest_stripe(self, name, y):
 		best = None
 		for st in self.stripes[name]:
@@ -1200,6 +1167,17 @@ class MacroPowerVias:
 			if best is None or d < best[0]:
 				best = (d, st)
 		return best[1] if best is not None else None
+
+	def _pin_powered(self, net_name, r):
+		"""True if an existing via (pdngen's macro array, a std-cell riser,
+		etc.) already sits on this pin rect. A pin with a via on it is already
+		tied to the grid; stacking another cut inside it is what produces the
+		1nm XOR slivers (Magic merges cuts, KLayout keeps them)."""
+		for x0, y0, x1, y1 in self.existing.get(net_name, ()):
+			if (x0 < r.xMax()) and (x1 > r.xMin()) and \
+					(y0 < r.yMax()) and (y1 > r.yMin()):
+				return True
+		return False
 
 	def _m4_pin(self, net, r):
 		best = None
@@ -1215,47 +1193,32 @@ class MacroPowerVias:
 			self.reasons['no_stripe'] += 1
 			return 0
 		_, ox, oy, st = best
-		if getattr(self, '_short', 0) < 8:
-			self._short = getattr(self, '_short', 0) + 1
-			w = (r.xMax() - r.xMin()) / self.dbu
-			h = (r.yMax() - r.yMin()) / self.dbu
-			print(f'MacroPowerVias._m4_pin master={self._cur_master} '
-				f'net={net.getName()} pin {w:.2f}x{h:.2f}um '
-				f'overlap ox={ox/self.dbu:.2f} oy={oy/self.dbu:.2f} '
-				f'min_m4={self.min_m4[0]/self.dbu:.2f}x{self.min_m4[1]/self.dbu:.2f}')
 		if ox < self.min_m4[0] or oy < self.min_m4[1]:
 			self.reasons['too_small'] += 1
 			return 0
-		# The via must sit on the manufacturing grid: Magic streams GDS on a
-		# 5nm grid while KLayout keeps 1nm, so a half-grid centre puts every
-		# cut edge on a 2.5nm coordinate and the two streams disagree by 1nm
-		# all around the cut (hundreds of XOR slivers).
-		x = self._snap((max(r.xMin(), st[0]) + min(r.xMax(), st[2])) // 2)
-		y = self._snap((max(r.yMin(), st[1]) + min(r.yMax(), st[3])) // 2)
-		# Discrete 1x1 vias, spaced along the overlap. A multi-cut generate
-		# array is packed from the pin's own size and its neighbouring cuts
-		# end up touching, which Magic (which merges cuts when streaming GDS)
-		# and KLayout (which keeps them apart) resolve differently - that is
-		# what produced 1046 Via4 XOR slivers. 1x1 vias are unambiguous.
-		step = 1200
-		n = max(1, min(4, ox // step))
-		lo_x = max(r.xMin(), st[0]) + self.min_m4[0] // 2
-		hi_x = min(r.xMax(), st[2]) - self.min_m4[0] // 2
-		sw = None
-		placed_here = 0
-		for k in range(n):
-			xk = self._snap(lo_x + (hi_x - lo_x) * k // max(1, n - 1) if n > 1 else x)
-			if not self._claim_via(net.getName(), xk, y):
-				self.reasons['claimed'] += 1
-				continue
-			if sw is None:
-				sw = odb.dbSWire.create(net, "ROUTED")
-			odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(xk, y)], "STRIPE")
-			placed_here += 1
-		if placed_here:
+
+		# If this pin already carries a via, it is powered: nothing to add,
+		# and stacking a cut would XOR. (The point-based keep-out this used to
+		# run rejected *every* candidate because pdngen's arrays and StdCellPower
+		# risers sit on the same shared stripe at the pin's y, hundreds of um
+		# away in x - but the keep-out only compared points, so it rejected
+		# pins that have no via on them at all, leaving the whole macro set
+		# unpowered.)
+		if self._pin_powered(net.getName(), r):
+			self.reasons['claimed'] += 1
 			return 1
 
-		return 0
+		# A via must sit on the manufacturing grid: Magic streams GDS on a 5nm
+		# grid while KLayout keeps 1nm, so a half-grid centre puts the cut edge
+		# on a 2.5nm coordinate and the two streams disagree by 1nm all around.
+		x = self._snap((max(r.xMin(), st[0]) + min(r.xMax(), st[2])) // 2)
+		y = self._snap((max(r.yMin(), st[1]) + min(r.yMax(), st[3])) // 2)
+
+		# One Via4 per pin. The pin has no via on it (checked above), so this
+		# cut cannot overlap any other cut of this net.
+		sw = odb.dbSWire.create(net, "ROUTED")
+		odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, y)], "STRIPE")
+		return 1
 
 	def _m3_pin(self, net, r, idx):
 		# A Metal3 power pin (the Arrakeen SRAM's interleaved vdd/vss strips):
@@ -1275,10 +1238,6 @@ class MacroPowerVias:
 
 		y0 = self._snap((r.yMin() + r.yMax()) // 2)
 		y1 = self._snap((st[1] + st[3]) // 2)
-
-		if not self._claim_via(net.getName(), x, y1):
-			self.reasons['claimed'] += 1
-			return 0
 
 		# 0.8um wide, so the Via4 enclosure (0.76um) sits inside it.
 		sw = odb.dbSWire.create(net, "ROUTED")
@@ -1303,11 +1262,8 @@ class MacroPowerVias:
 		# router cannot see - 27 of them cost 3500 net mismatches when the
 		# router happened to route across them.
 		done_m3 = set()
-		self._short = 0
-		self._cur_master = None
 		for inst in self.reader.block.getInsts():
 			master = inst.getMaster().getName()
-			self._cur_master = master
 			if master.startswith(STDCELL_PREFIXES):
 				continue
 			idx = 0
@@ -1337,8 +1293,7 @@ class MacroPowerVias:
 						idx += 1
 
 		print(f'MacroPowerVias: {n4} Metal4 pins and {n3} Metal3 pins tied '
-			f'to the stripes, reasons={self.reasons}, '
-			f'existing_vias={ {k: len(v) for k, v in self.existing.items()} }')
+			f'to the stripes, reasons={self.reasons}')
 
 
 class WellTaps:
