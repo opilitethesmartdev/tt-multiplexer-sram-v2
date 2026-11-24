@@ -1158,6 +1158,14 @@ class MacroPowerVias:
 							continue
 						_boxes.append((_w.xMin() - 400, _w.yMin() - 400,
 							_w.xMax() + 400, _w.yMax() + 400))
+						# The via is special/fixed and invisible to
+						# TritonRoute, which then routes signals straight
+						# through it (the uio_oe[0] <-> vgnd Metal4.Short).
+						# Obstruct the via's Metal4 footprint so the router
+						# goes around it instead.
+						odb.dbObstruction_create(self.reader.block, self.m4,
+							_w.xMin() - 400, _w.yMin() - 400,
+							_w.xMax() + 400, _w.yMax() + 400)
 			self.existing[_name] = _boxes
 
 	def _nearest_stripe(self, name, y):
@@ -1214,9 +1222,19 @@ class MacroPowerVias:
 		x = self._snap((max(r.xMin(), st[0]) + min(r.xMax(), st[2])) // 2)
 		y = self._snap((max(r.yMin(), st[1]) + min(r.yMax(), st[3])) // 2)
 
-		# One Via4 per pin. The pin has no via on it (checked above), so this
-		# cut cannot overlap any other cut of this net.
+		# The pin is a strip (the mux VDPWR/VGND are ~1.6um wide, 177um tall).
+		# A bare Via4 point relies on the via's Metal4 enclosure (0.38um)
+		# landing squarely inside the strip; a half-grid snap can leave a 1nm
+		# gap that keeps the pin electrically floating in the extraction even
+		# though the via "looks" placed. Draw an explicit Metal4 rectangle over
+		# the pin/stripe crossing so the pin is provably shorted to the stripe,
+		# then one Via4 through it for the Metal5 connection.
+		w = min(int(r.xMax() - r.xMin()), 1600)
 		sw = odb.dbSWire.create(net, "ROUTED")
+		odb.createSBoxes(sw, self.m4, [
+			odb.Rect(x - w // 2, y - self.min_m4[1] // 2 - 200,
+				x + w // 2, y + self.min_m4[1] // 2 + 200),
+		], "STRIPE")
 		odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, y)], "STRIPE")
 		return 1
 
