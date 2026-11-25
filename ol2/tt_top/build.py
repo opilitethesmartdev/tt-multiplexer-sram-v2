@@ -542,13 +542,21 @@ class MergeWellNets(Step):
 		text, short_res = self._drop_short_resistors(text)
 		text, supply_renamed = self._canonical_supply_nets(
 			text, self.config['DESIGN_NAME'])
-		try:
-			def_path = state_in.get('def')
-		except AttributeError:
+		# The state keys are DesignFormat members in LibreLane but plain
+		# strings in the JSON; try both before giving up on the repair.
+		def_path = None
+		for key in ('def', getattr(DesignFormat, 'DEF', None)):
+			if key is None:
+				continue
 			try:
-				def_path = state_in['def']
-			except (KeyError, TypeError):
-				def_path = None
+				val = state_in.get(key)
+			except Exception:
+				val = None
+			if isinstance(val, (list, tuple)):
+				val = val[0] if val else None
+			if val:
+				def_path = val
+				break
 		text, signal_fixed = self._repair_signal_pins(text, def_path)
 		text, count = re.subn(r'(?<!\S)\S+/VNW(?!\S)', 'vdpwr', text)
 		text, dropped = self._collapse_ports(text, self.config['DESIGN_NAME'])
