@@ -656,11 +656,13 @@ if __name__ == '__main__':
 		"GRT_ALLOW_CONGESTION"  : True,
 		"GRT_REPAIR_ANTENNAS"   : False,
 		"DRT_ANTENNA_REPAIR_ITERS" : 0,
-		# The default cap is 64 iterations, which takes ~4h on this design
-		# when the router cannot converge. A healthy run terminates on its
-		# own once there are no violations left, so cap the failure case to
-		# keep CI iteration time bounded.
-		"DRT_OPT_ITERS"         : 32,
+		# A healthy run terminates on its own once there are no violations
+		# left. The last remaining defect is one module<->mux net that the
+		# detailed router leaves both legally connected *and* with a redundant
+		# loop running through the module's Metal4 VSS strip; the "stubborn
+		# tiles" passes were still converging (12 -> 9 violations) when the
+		# old 32-iteration cap hit, so give them room to finish.
+		"DRT_OPT_ITERS"         : 64,
 		# The remaining routing DRCs sit in a very small congested pocket at
 		# the SRAM address pins. Metal4 alone does not give the router enough
 		# room to escape there; Metal5 carries only the power stripes.

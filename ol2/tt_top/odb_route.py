@@ -1126,9 +1126,14 @@ class MacroPowerVias:
 			self.v34.cut_sz[1] + 2 * self.v34.bot_enc[1])
 
 		self.stripes = {}
+		# Horizontal extent of each Metal5 STRIPE (the ring's own Metal5
+		# shapes are excluded: they sit at the die edges and would make every
+		# stripe look "short" against them).
+		self.stripe_spans = {}
 		for name in self.NETS:
 			net = reader.block.findNet(name)
 			rects = []
+			spans = set()
 			if net is not None:
 				for sw in net.getSWires():
 					for w in sw.getWires():
@@ -1137,10 +1142,13 @@ class MacroPowerVias:
 						if w.getTechLayer().getName() != 'Metal5':
 							continue
 						rects.append((w.xMin(), w.yMin(), w.xMax(), w.yMax()))
+						if w.getWireShapeType() == 'STRIPE':
+							spans.add((w.xMin(), w.xMax()))
 			self.stripes[name] = rects
+			self.stripe_spans[name] = spans
 
 		self.reasons = {'no_stripe': 0, 'too_small': 0, 'claimed': 0,
-			'jogged': 0}
+			'jogged': 0, 'strapped': 0}
 
 		# Vias already on these nets: pdngen's macro arrays and ring/stripe
 		# vias, ModulePowerStrapper's gated-domain straps, StdCellPower's
@@ -1220,6 +1228,98 @@ class MacroPowerVias:
 		odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, y)], "STRIPE")
 		return 1
 
+	def _tie_isolated(self, net, rects):
+		"""Tie a supply stripe that pdngen left short of the core ring.
+
+		pdngen extends every Metal5 stripe to the core ring, but where a
+		ring lane has a gap (a pad power pin) it stops the stripe at the
+		macro's outermost power strip instead. The 221um ring gaps line up
+		with three branch rows, so those rows' only vdpwr stripe is an
+		island: the muxes tied to it extract as floating nets and LVS fails
+		with ``branch[2/3/9].check_mask.mux_I/VDPWR``.
+
+		Bridge such a stripe to the nearest stripe of the same net that does
+		reach the ring, using one of the macro's own power-strip columns for
+		the Metal4 strap (that column already carries this net inside the
+		macro, and its outer edge is where the router runs no module signal)
+		plus one Via4 at the far stripe.
+		"""
+		name = net.getName()
+		spans = self.stripe_spans.get(name) or set()
+		if not spans or not rects:
+			return 0
+		sts = [s for s in self.stripes.get(name, ())
+			if (s[0], s[2]) in spans]
+		if not sts:
+			return 0
+
+		tol = 800
+		gx0 = min(s[0] for s in spans)
+		gx1 = max(s[1] for s in spans)
+		reach = [s for s in sts
+			if (s[0] <= gx0 + tol) or (s[2] >= gx1 - tol)]
+		if not reach:
+			return 0
+
+		def overlap(r, st):
+			ox = min(r.xMax(), st[2]) - max(r.xMin(), st[0])
+			oy = min(r.yMax(), st[3]) - max(r.yMin(), st[1])
+			return (ox, oy) if (ox > 0 and oy > 0) else None
+
+		# Use the leftmost column: the mux keeps its outer margin free of
+		# module signals (the fan-out from the block above uses the inner
+		# columns), so the strap does not cross a routed Metal4 signal.
+		for r in sorted(rects, key=lambda q: q.xMin()):
+			best = None
+			for st in sts:
+				ov = overlap(r, st)
+				if ov is None:
+					continue
+				area = ov[0] * ov[1]
+				if best is None or area > best[0]:
+					best = (area, st)
+			if best is None:
+				continue
+			st = best[1]
+			if (st[0] <= gx0 + tol) or (st[2] >= gx1 - tol):
+				continue
+
+			x = self._snap((r.xMin() + r.xMax()) // 2)
+			cand = None
+			for cs in reach:
+				if not (cs[0] <= x <= cs[2]):
+					continue
+				if cs[1] > r.yMax():
+					gap = cs[1] - r.yMax()
+				elif cs[3] < r.yMin():
+					gap = r.yMin() - cs[3]
+				else:
+					gap = 0
+				if cand is None or gap < cand[0]:
+					cand = (gap, cs)
+			if cand is None or cand[0] > 200000:
+				continue
+
+			cs = cand[1]
+			w = min(int(r.xMax() - r.xMin()), 1600)
+			ycs = self._snap((cs[1] + cs[3]) // 2)
+			if ycs > r.yMax():
+				ys, ye = r.yMax() - 200, ycs
+			else:
+				ys, ye = ycs, r.yMin() + 200
+			if ye <= ys:
+				continue
+
+			sw = odb.dbSWire.create(net, "ROUTED")
+			odb.createSBoxes(sw, self.m4, [
+				odb.Rect(x - w // 2, ys, x + w // 2, ye),
+			], "STRIPE")
+			odb.createSBoxes(sw, self.v45.get(1, 1),
+				[odb.Point(x, ycs)], "STRIPE")
+			self.reasons['strapped'] += 1
+			return 1
+		return 0
+
 	def _m3_pin(self, net, r, idx):
 		# A Metal3 power pin (the Arrakeen SRAM's interleaved vdd/vss strips):
 		# Via3 up to Metal4, a short Metal4 jog to the nearest same-net Metal5
@@ -1267,6 +1367,7 @@ class MacroPowerVias:
 			if master.startswith(STDCELL_PREFIXES):
 				continue
 			idx = 0
+			inst_m4 = {}
 			for it in inst.getITerms():
 				net = it.getNet()
 				if net is None or net.getName() not in self.NETS:
@@ -1278,6 +1379,7 @@ class MacroPowerVias:
 					ly = layer.getName()
 					if ly == 'Metal4':
 						n4 += self._m4_pin(net, r)
+						inst_m4.setdefault(net.getName(), (net, []))[1].append(r)
 						# NOTE: do not obstruct the pin here. On the user
 						# modules the power pins sit on the same edge as the
 						# signal pins, so a pin-shaped obstruction also covers
@@ -1291,6 +1393,11 @@ class MacroPowerVias:
 								done_m3.add(key)
 								n3 += 1
 						idx += 1
+			# A stripe that stops short of the ring leaves every pin on it
+			# floating even though the via is placed. Bridge it once per
+			# instance (the left and right muxes each do their own column).
+			for _net, _rects in inst_m4.values():
+				n4 += self._tie_isolated(_net, _rects)
 
 		print(f'MacroPowerVias: {n4} Metal4 pins and {n3} Metal3 pins tied '
 			f'to the stripes, reasons={self.reasons}')
@@ -1534,7 +1641,12 @@ class StdCellPower:
 
 		for side, end in ((1, rx1 - m1_half_w), (-1, rx0 + m1_half_w)):
 			xv = self._snap_lo(end) if side > 0 else self._snap_hi(end)
-			for d in range(1, 91):
+			# 512 lanes ~= 570um: a rail entirely inside the two stacked
+			# 568um-wide Arrakeen SRAMs (the row in their 7.7um gap) has to
+			# reach a column past one of them before it can go up to a
+			# stripe. The old 90-lane limit could not, so those 10 rails
+			# stayed unpowered (the isolated vdpwr island in LVS).
+			for d in range(1, 512):
 				xh = self._snap_lo(xv + side * d * lane)
 
 				hx0 = min(xv, xh) - self.riser_w // 2
