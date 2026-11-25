@@ -9,6 +9,7 @@
 #
 
 import argparse
+import glob
 import json
 import math
 import os
@@ -557,6 +558,14 @@ class MergeWellNets(Step):
 			if val:
 				def_path = val
 				break
+		if not def_path:
+			# Last resort: the step's sibling directories hold the DEF the
+			# flow wrote after routing; any of them has the same connectivity.
+			cands = sorted(glob.glob(os.path.join(
+				os.path.dirname(str(self.step_dir)), '*',
+				f'{self.config["DESIGN_NAME"]}.def')))
+			if cands:
+				def_path = cands[-1]
 		text, signal_fixed = self._repair_signal_pins(text, def_path)
 		text, count = re.subn(r'(?<!\S)\S+/VNW(?!\S)', 'vdpwr', text)
 		text, dropped = self._collapse_ports(text, self.config['DESIGN_NAME'])
