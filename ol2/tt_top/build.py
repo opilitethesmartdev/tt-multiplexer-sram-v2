@@ -180,6 +180,16 @@ class MergeWellNets(Step):
 	# genuinely on the ground net in the netlist as well).
 	OUTPUT_PINS = ('Z', 'Q', 'QN', 'CO')
 
+	# Pad power pins that the GF180 OpenFrame DEF template maps onto one
+	# internal net. Magic's 0-ohm short resistors are only dropped inside
+	# one of these groups; a supply-to-signal or cross-domain short is left
+	# for netgen to report.
+	SUPPLY_GROUPS = (
+		('vccd', 'vccd1', 'vccd2', 'vdpwr'),
+		('vssa', 'vssa1', 'vssa2', 'vssd', 'vssd1', 'vssd2', 'vgnd'),
+		('vdda', 'vdda1', 'vdda2', 'vapwr'),
+	)
+
 	def _subckt_pins(self, text):
 		pins = {}
 		lines = text.splitlines()
@@ -333,6 +343,90 @@ class MergeWellNets(Step):
 		lines[start:end + 1] = [line + '\n' for line in out]
 		return ''.join(lines), len(dropped)
 
+	def _drop_short_resistors(self, text):
+		"""Remove Magic's 0-ohm shorts between two pads of the same supply.
+
+		With MAGIC_EXT_SHORT_RESISTOR on, Magic preserves a short as
+		``R<n> netA netB 0`` instead of silently merging the nets. That is
+		what we want for a real short, but the wrapper's pad power pins
+		(vccd1/vccd2/vccd, vssd1/vssd2/vssa1/...) are intentionally the
+		same on-chip net, and now that the PDN is fully connected Magic
+		reports each pair. Netgen then merges the two nodes through the
+		resistor and drops one of the two top-level ports, so the layout
+		cell pin list no longer matches the schematic:
+
+		  Final result: Top level cell failed pin matching.
+
+		Dropping such a resistor leaves the alias port in the subckt header
+		(dangling, exactly like the same pad port on the schematic side)
+		while the net that carries the devices keeps its own name, so the
+		connectivity is unchanged and all 88 pin names survive.
+
+		Only resistors inside one SUPPLY_GROUPS entry are dropped, so a
+		supply-to-signal or cross-domain short is still left in place for
+		netgen to flag.
+		"""
+		groups = {}
+		for idx, names in enumerate(self.SUPPLY_GROUPS):
+			for name in names:
+				groups[name] = idx
+
+		out = []
+		dropped = 0
+		for line in text.splitlines(keepends=True):
+			m = re.match(
+				r'^(R\S+)\s+(\S+)\s+(\S+)\s+0(?:\.0*)?\s*$',
+				line.strip(),
+			)
+			if m and m.group(2) in groups and \
+					groups.get(m.group(2)) == groups.get(m.group(3)):
+				dropped += 1
+				continue
+			out.append(line)
+		return ''.join(out), dropped
+
+	def _canonical_supply_nets(self, text, design):
+		"""Rename the top-level supply body nets to the schematic names.
+
+		Magic names a supply net after one of the pad labels that sits on
+		it (``vccd2``, ``vssd2``, ``vdda2``) while the schematic calls the
+		same net ``vdpwr`` / ``vgnd`` / ``vapwr``, and the well repair above
+		already uses the schematic names for the cells it fixes. Renaming
+		the body tokens makes the two netlists name the net the same way and,
+		more importantly, joins the repaired cells with the rest of the grid
+		instead of leaving them on a separate ``vdpwr`` island.
+
+		Only the top-level subcircuit body is touched (the header keeps the
+		pad port names), and only standalone net tokens are replaced, so
+		hierarchical switched nets such as ``branch[0]...vssd2`` are left
+		alone.
+		"""
+		lines = text.splitlines(keepends=True)
+		start = None
+		for i, line in enumerate(lines):
+			if re.match(r'\.subckt\s+' + re.escape(design) + r'(\s|$)', line):
+				start = i
+				break
+		if start is None:
+			return text, 0
+
+		hdr_end = start
+		while hdr_end + 1 < len(lines) and lines[hdr_end + 1].startswith('+'):
+			hdr_end += 1
+
+		body = ''.join(lines[hdr_end + 1:])
+		renamed = 0
+		for group in self.SUPPLY_GROUPS:
+			canon = group[-1]
+			for name in group:
+				if name == canon:
+					continue
+				body, n = re.subn(
+					r'(^|[\s(])' + re.escape(name) + r'(?=[\s)]|$)',
+					r'\1' + canon, body, flags=re.M)
+				renamed += n
+		return ''.join(lines[:hdr_end + 1]) + body, renamed
+
 	def run(self, state_in, **kwargs):
 		src = state_in[DesignFormat.SPICE]
 		dst = os.path.join(
@@ -344,6 +438,9 @@ class MergeWellNets(Step):
 			text = f.read()
 
 		text, merged_fixed, merged_unsafe = self._split_merged_supplies(text)
+		text, short_res = self._drop_short_resistors(text)
+		text, supply_renamed = self._canonical_supply_nets(
+			text, self.config['DESIGN_NAME'])
 		text, count = re.subn(r'(?<!\S)\S+/VNW(?!\S)', 'vdpwr', text)
 		text, dropped = self._collapse_ports(text, self.config['DESIGN_NAME'])
 
@@ -354,7 +451,9 @@ class MergeWellNets(Step):
 			f'{dropped} duplicate pad ports collapsed, '
 			f'{merged_fixed} cells with a merged supply net split into '
 			f'vdpwr/vgnd, {merged_unsafe} left alone (merged net also '
-			f'carries a signal pin)')
+			f'carries a signal pin), '
+			f'{short_res} same-supply short resistors dropped, '
+			f'{supply_renamed} supply net tokens renamed to the schematic names')
 
 		return {DesignFormat.SPICE: Path(dst)}, {}
 
