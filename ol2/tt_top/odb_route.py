@@ -1130,22 +1130,35 @@ class MacroPowerVias:
 		# shapes are excluded: they sit at the die edges and would make every
 		# stripe look "short" against them).
 		self.stripe_spans = {}
+		# Vertical core-ring lanes, as the actual Metal4 RING segments.
+		# A stripe only has a supply path if its end lands on a lane segment
+		# that covers the stripe's y - pdngen clips the lane at pad cells.
+		self.ring_segs = {}
+		die = reader.block.getDieArea()
+		self.mid_x = (die.xMin() + die.xMax()) // 2
 		for name in self.NETS:
 			net = reader.block.findNet(name)
 			rects = []
 			spans = set()
+			segs = []
 			if net is not None:
 				for sw in net.getSWires():
 					for w in sw.getWires():
 						if w.isVia():
 							continue
-						if w.getTechLayer().getName() != 'Metal5':
+						layer = w.getTechLayer().getName()
+						if layer == 'Metal4' and \
+								w.getWireShapeType() == 'RING':
+							segs.append((w.xMin(), w.yMin(),
+								w.xMax(), w.yMax()))
+						if layer != 'Metal5':
 							continue
 						rects.append((w.xMin(), w.yMin(), w.xMax(), w.yMax()))
 						if w.getWireShapeType() == 'STRIPE':
 							spans.add((w.xMin(), w.xMax()))
 			self.stripes[name] = rects
 			self.stripe_spans[name] = spans
+			self.ring_segs[name] = segs
 
 		self.reasons = {'no_stripe': 0, 'too_small': 0, 'claimed': 0,
 			'jogged': 0, 'strapped': 0}
@@ -1187,6 +1200,32 @@ class MacroPowerVias:
 			if best is None or d < best[0]:
 				best = (d, st)
 		return best[1] if best is not None else None
+
+	def _stripe_connected(self, name, st):
+		"""True if this stripe end lands on real Metal4 ring metal.
+
+		Comparing x extents alone is not enough: pdngen clips the ring lane
+		at pad cells, and the very first vdpwr stripe (y=281.8) reaches the
+		right lane's x but sits below the lane's lowest segment. Such a
+		stripe is electrically an island even though it is full width.
+		"""
+		segs = self.ring_segs.get(name) or ()
+		y = (st[1] + st[3]) // 2
+		if segs:
+			for rx0, ry0, rx1, ry1 in segs:
+				if not (ry0 <= y <= ry1):
+					continue
+				if rx1 <= self.mid_x and st[0] <= rx1 + 800:
+					return True
+				if rx0 >= self.mid_x and st[2] >= rx0 - 800:
+					return True
+			return False
+		spans = self.stripe_spans.get(name) or set()
+		if not spans:
+			return True
+		gx0 = min(s[0] for s in spans)
+		gx1 = max(s[1] for s in spans)
+		return (st[0] <= gx0 + 800) or (st[2] >= gx1 - 800)
 
 	def _m4_pin(self, net, r):
 		best = None
@@ -1253,11 +1292,7 @@ class MacroPowerVias:
 		if not sts:
 			return 0
 
-		tol = 800
-		gx0 = min(s[0] for s in spans)
-		gx1 = max(s[1] for s in spans)
-		reach = [s for s in sts
-			if (s[0] <= gx0 + tol) or (s[2] >= gx1 - tol)]
+		reach = [s for s in sts if self._stripe_connected(name, s)]
 		if not reach:
 			return 0
 
@@ -1281,7 +1316,7 @@ class MacroPowerVias:
 			if best is None:
 				continue
 			st = best[1]
-			if (st[0] <= gx0 + tol) or (st[2] >= gx1 - tol):
+			if self._stripe_connected(name, st):
 				continue
 
 			x = self._snap((r.xMin() + r.xMax()) // 2)
@@ -1344,13 +1379,6 @@ class MacroPowerVias:
 			if (s[0], s[2]) in spans]
 		if not sts:
 			return 0
-		tol = 800
-		gx0 = min(s[0] for s in spans)
-		gx1 = max(s[1] for s in spans)
-
-		def connected(st):
-			return (st[0] <= gx0 + tol) or (st[2] >= gx1 - tol)
-
 		def best_stripe(r):
 			best = None
 			for st in sts:
@@ -1365,7 +1393,7 @@ class MacroPowerVias:
 
 		for r in sorted(rects, key=lambda q: q.xMin()):
 			st = best_stripe(r)
-			if st is None or connected(st):
+			if st is None or self._stripe_connected(name, st):
 				continue
 			cand = None
 			for pn, r2 in self.macro_pins:
@@ -1375,7 +1403,7 @@ class MacroPowerVias:
 						r2.xMax() == r.xMax() and r2.yMax() == r.yMax()):
 					continue
 				st2 = best_stripe(r2)
-				if st2 is None or not connected(st2):
+				if st2 is None or not self._stripe_connected(name, st2):
 					continue
 				# Join in the macro-free channel: 1um past the pin, which
 				# also clears the macro's own top/bottom margin.
