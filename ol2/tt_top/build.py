@@ -634,6 +634,54 @@ class AddGLSupplyPorts(Step):
 	inputs = [PNL_FORMAT]
 	outputs = [PNL_FORMAT]
 
+	# Modules the shuttle's verilog/includes/includes.gl.mux_top provides
+	# for the gate-level run. Everything else the netlist instantiates has to
+	# be made self-contained here.
+	PROVIDED_GL = frozenset((
+		'tt_ctrl', 'tt_mux', 'tt_um_chip_rom',
+		'tt_pg_3v3_hp_1', 'tt_pg_3v3_hp_2', 'tt_pg_3v3_hp_4',
+		'tt_um_factory_test',
+	))
+
+	def _append_missing_models(self, text):
+		vdir = os.path.join(
+			os.path.dirname(os.path.dirname(os.path.dirname(
+				str(self.step_dir)))),
+			'verilog',
+		)
+		if not os.path.isdir(vdir):
+			return text, []
+
+		defined = set(re.findall(r'(?m)^\s*module\s+(\w+)', text))
+		masters = set()
+		for line in text.splitlines():
+			m = re.match(r'\s*(\w[\w$]*)\s+\\?\S+\s*\(', line)
+			if not m:
+				continue
+			name = m.group(1)
+			if name in ('module', 'wire', 'assign', 'input', 'output',
+					'inout', 'reg', 'parameter', 'localparam'):
+				continue
+			if name.startswith('gf180mcu_'):
+				continue
+			masters.add(name)
+
+		appended = []
+		for mod in sorted(masters):
+			if mod in self.PROVIDED_GL or mod in defined:
+				continue
+			path = os.path.join(vdir, mod + '.v')
+			if not os.path.isfile(path):
+				continue
+			with open(path, encoding='utf-8', errors='replace') as f:
+				body = f.read()
+			text += (
+				f'\n// GL model for {mod}: not in includes.gl.mux_top, '
+				f'folded into the submission netlist.\n' + body + '\n')
+			defined.add(mod)
+			appended.append(mod)
+		return text, appended
+
 	def run(self, state_in, **kwargs):
 		src = state_in[PNL_FORMAT]
 		design = self.config['DESIGN_NAME']
@@ -667,6 +715,11 @@ class AddGLSupplyPorts(Step):
 					1)
 
 			print(f'AddGLSupplyPorts: added dvdd/dvss to {design}')
+
+		text, appended = self._append_missing_models(text)
+		if appended:
+			print('AddGLSupplyPorts: folded in GL models for '
+				+ ', '.join(appended))
 
 		with open(dst, 'w', encoding='utf-8') as f:
 			f.write(text)
