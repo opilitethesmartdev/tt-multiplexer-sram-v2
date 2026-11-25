@@ -605,6 +605,75 @@ class ExtractSpice(Magic.SpiceExtraction):
 		)
 
 
+PNL_FORMAT = getattr(DesignFormat, 'POWERED_NETLIST', None)
+if PNL_FORMAT is None:
+	PNL_FORMAT = next(
+		(f for f in DesignFormat if getattr(f, 'value', None) == 'pnl'),
+		None,
+	)
+
+
+@Step.factory.register()
+class AddGLSupplyPorts(Step):
+	"""Expose dvdd/dvss on the powered netlist for the shuttle GL testbench.
+
+	The shuttle's `verilog/dv/mux/test_mux_tb.v` powers a gate-level run with
+	`wire dvdd = 1'b1; wire dvss = 1'b0;` and connects `.dvdd` / `.dvss` on
+	the top cell. The hardened netlist's supply ports are the pad names
+	(vccd1, vssa1, ...), which the testbench leaves unconnected, so the core
+	`vdpwr` / `vgnd` nets have no source and the simulation starts in X.
+
+	Add the two ports the testbench expects and tie them to the core nets.
+	This runs after LVS/DRC/XOR and only changes the netlist copied into the
+	foundry submission, so the verified layout database is untouched.
+	"""
+
+	id = "TT.Top.AddGLSupplyPorts"
+	name = "Expose dvdd/dvss for the shuttle GL testbench"
+
+	inputs = [PNL_FORMAT]
+	outputs = [PNL_FORMAT]
+
+	def run(self, state_in, **kwargs):
+		src = state_in[PNL_FORMAT]
+		design = self.config['DESIGN_NAME']
+		dst = os.path.join(self.step_dir, f'{design}.pnl.v')
+
+		with open(src, encoding='utf-8') as f:
+			text = f.read()
+
+		if 'dvdd' not in text.split('endmodule')[0]:
+			marker = f'module {design} ('
+			i = text.find(marker)
+			j = text.find(');', i)
+			if i >= 0 and j > i:
+				head = text[i:j].rstrip()
+				if not head.endswith(','):
+					head += ','
+				head += '\n    dvdd,\n    dvss'
+				text = text[:i] + head + text[j:]
+
+			decl = ' inout [73:0] pad_raw;'
+			text = text.replace(
+				decl, decl + '\n inout dvdd;\n inout dvss;', 1)
+
+			# Tie the two ports to the core supplies once their wires are
+			# declared (they are declared after the port list).
+			anchor = ' wire vgnd;'
+			if anchor in text:
+				text = text.replace(
+					anchor,
+					anchor + '\n assign vdpwr = dvdd;\n assign vgnd = dvss;',
+					1)
+
+			print(f'AddGLSupplyPorts: added dvdd/dvss to {design}')
+
+		with open(dst, 'w', encoding='utf-8') as f:
+			f.write(text)
+
+		return {PNL_FORMAT: Path(dst)}, {}
+
+
 class TopFlow(SequentialFlow):
 
 	Steps: List[Type[Step]] = [
@@ -642,6 +711,7 @@ class TopFlow(SequentialFlow):
 		Checker.IllegalOverlap,
 		Netgen.LVS,
 		Checker.LVS,
+		AddGLSupplyPorts,
 	]
 
 
