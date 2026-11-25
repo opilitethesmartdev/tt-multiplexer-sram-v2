@@ -136,20 +136,11 @@ if __name__ == '__main__':
 		"RT_MAX_LAYER"         : "Metal4",
 
 		# LEF generation option
-		# The sky130-era workaround (MAGIC_LEF_WRITE_USE_GDS=False) made the
-		# LEF write the VDPWR/VGND pins without their GDS port shapes. On
-		# GF180 that left the VDPWR strip unlabelled, so the parent tt_top
-		# LVS extracted every mux's VDPWR as a floating per-branch net
-		# (branch[N].check_mask.mux_I/VDPWR) that never merged with the
-		# global vdpwr grid - the three remaining LVS errors.
-		# Write the LEF from the GDS so the power pins carry their real port,
-		# but keep PINONLY so the macro does not also export its full
-		# obstruction geometry (that over-constrained the parent router).
-		"MAGIC_LEF_WRITE_USE_GDS" : True,
+		"MAGIC_LEF_WRITE_USE_GDS" : False,	# Workaround LEF/GDS pin naming issue
 		"MAGIC_WRITE_LEF_PINONLY" : True,
 
 		# LVS
-		"MAGIC_DEF_LABELS": True,			# Keep VDPWR/VGND port labels for the parent LVS
+		"MAGIC_DEF_LABELS": False,			# Avoid exporting useless internal labels
 	}
 
 	flow = MuxFlow(
