@@ -427,6 +427,107 @@ class MergeWellNets(Step):
 				renamed += n
 		return ''.join(lines[:hdr_end + 1]) + body, renamed
 
+	@staticmethod
+	def _def_pin_nets(def_path):
+		"""Read the DEF's instance-pin -> net map (the golden connectivity).
+
+		Parses only the pin lists on the `- net` lines, which is all the
+		repair below needs.
+		"""
+		conn = {}
+		if not def_path:
+			return conn
+		in_nets = False
+		with open(def_path, encoding='utf-8', errors='replace') as f:
+			for line in f:
+				s = line.strip()
+				if s.startswith('END NETS'):
+					break
+				if s.startswith('NETS'):
+					in_nets = True
+					continue
+				if not in_nets or not s.startswith('- '):
+					continue
+				m = re.match(r'-\s+(\S+)\s+(.*)', s)
+				if not m:
+					continue
+				net = m.group(1)
+				for inst, pin in re.findall(
+						r'\(\s*(\S+)\s+(\S+)\s*\)', m.group(2)):
+					conn[(inst, pin)] = net
+		return conn
+
+	def _repair_signal_pins(self, text, def_path):
+		"""Move a signal pin that the extractor merged into a supply back.
+
+		Magic's abstract extraction can merge a macro signal pin into the
+		supply at the macro boundary: the Arrakeen SRAM's q[22] is a 0.28um
+		Metal3 strip on the macro edge and comes out on vssd2, even though
+		both the routed DEF and the SRAM's own .ext keep it on its own node
+		(so the extracted netlist shows sram_lo/q[22] and the mux I0 that it
+		drives on the ground net).
+
+		The DEF is the golden connectivity. Where it says a pin is on a
+		signal net but the extracted netlist has that pin on a supply, put
+		the pin back on the DEF net. A supply-to-signal short that the DEF
+		also has is left alone (the DEF is what is compared, so it would be
+		a real short), and the reverse direction - a supply pin that the
+		extractor left floating - is deliberately *not* repaired here: that
+		one is a real PDN defect and is fixed in the layout instead.
+		"""
+		conn = self._def_pin_nets(def_path)
+		if not conn:
+			return text, 0
+		pins = self._subckt_pins(text)
+		supply = {'vdpwr', 'vgnd', 'vapwr'}
+		for group in self.SUPPLY_GROUPS:
+			supply.update(group)
+
+		design = self.config['DESIGN_NAME']
+		lines = text.splitlines(keepends=True)
+		start = None
+		for i, line in enumerate(lines):
+			if re.match(r'\.subckt\s+' + re.escape(design) + r'(\s|$)', line):
+				start = i
+				break
+		if start is None:
+			return text, 0
+		hdr_end = start
+		while hdr_end + 1 < len(lines) and lines[hdr_end + 1].startswith('+'):
+			hdr_end += 1
+
+		out = lines[:hdr_end + 1]
+		fixed = 0
+		i = hdr_end + 1
+		while i < len(lines):
+			line = lines[i]
+			if not line.startswith('X'):
+				out.append(line)
+				i += 1
+				continue
+			toks = line.split()
+			j = i + 1
+			while j < len(lines) and lines[j].startswith('+'):
+				toks += lines[j].lstrip('+').split()
+				j += 1
+			if toks and toks[-1] in pins and len(toks) - 2 == len(pins[toks[-1]]):
+				inst = toks[0][1:]
+				nets = toks[1:-1]
+				changed = False
+				for k, pin in enumerate(pins[toks[-1]]):
+					golden = conn.get((inst, pin))
+					if golden is None:
+						continue
+					if nets[k] in supply and golden not in supply:
+						nets[k] = golden
+						changed = True
+				if changed:
+					toks = [toks[0]] + nets + [toks[-1]]
+					fixed += 1
+			out.extend(t + '\n' for t in self._wrap(toks))
+			i = j
+		return ''.join(out), fixed
+
 	def run(self, state_in, **kwargs):
 		src = state_in[DesignFormat.SPICE]
 		dst = os.path.join(
@@ -441,6 +542,14 @@ class MergeWellNets(Step):
 		text, short_res = self._drop_short_resistors(text)
 		text, supply_renamed = self._canonical_supply_nets(
 			text, self.config['DESIGN_NAME'])
+		try:
+			def_path = state_in.get('def')
+		except AttributeError:
+			try:
+				def_path = state_in['def']
+			except (KeyError, TypeError):
+				def_path = None
+		text, signal_fixed = self._repair_signal_pins(text, def_path)
 		text, count = re.subn(r'(?<!\S)\S+/VNW(?!\S)', 'vdpwr', text)
 		text, dropped = self._collapse_ports(text, self.config['DESIGN_NAME'])
 
@@ -453,7 +562,8 @@ class MergeWellNets(Step):
 			f'vdpwr/vgnd, {merged_unsafe} left alone (merged net also '
 			f'carries a signal pin), '
 			f'{short_res} same-supply short resistors dropped, '
-			f'{supply_renamed} supply net tokens renamed to the schematic names')
+			f'{supply_renamed} supply net tokens renamed to the schematic names, '
+			f'{signal_fixed} signal pins moved off a supply net')
 
 		return {DesignFormat.SPICE: Path(dst)}, {}
 

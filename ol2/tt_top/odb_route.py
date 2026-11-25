@@ -1318,6 +1318,110 @@ class MacroPowerVias:
 				[odb.Point(x, ycs)], "STRIPE")
 			self.reasons['strapped'] += 1
 			return 1
+		return self._tie_neighbour(net, rects)
+
+	def _tie_neighbour(self, net, rects):
+		"""Last resort for a pin whose stripe reaches no ring segment.
+
+		The very first vdpwr stripe (y=281.8) sits below both core-ring
+		lanes: extending the lane down would run through pad_raw[18]'s pad
+		cell, so the stripe cannot be tied to the ring. Its only user is
+		the branch-14 power gate (the block[1] domain), whose VPWR pin sits
+		in the channel under that branch's mux. The mux's own VDPWR strip is
+		on a connected stripe and is at the same net, so a short pure-Metal4
+		L (pin -> channel -> mux strip column) powers the domain. No via is
+		needed: both ends are Metal4 pins of this net and the L crosses the
+		macro-free channel between them.
+
+		Only fires for a same-net pair within 12um in x and 40um in y, with
+		the join line clear of every macro bbox.
+		"""
+		name = net.getName()
+		spans = self.stripe_spans.get(name) or set()
+		if not spans or not rects:
+			return 0
+		sts = [s for s in self.stripes.get(name, ())
+			if (s[0], s[2]) in spans]
+		if not sts:
+			return 0
+		tol = 800
+		gx0 = min(s[0] for s in spans)
+		gx1 = max(s[1] for s in spans)
+
+		def connected(st):
+			return (st[0] <= gx0 + tol) or (st[2] >= gx1 - tol)
+
+		def best_stripe(r):
+			best = None
+			for st in sts:
+				ox = min(r.xMax(), st[2]) - max(r.xMin(), st[0])
+				oy = min(r.yMax(), st[3]) - max(r.yMin(), st[1])
+				if ox <= 0 or oy <= 0:
+					continue
+				area = ox * oy
+				if best is None or area > best[0]:
+					best = (area, st)
+			return None if best is None else best[1]
+
+		for r in sorted(rects, key=lambda q: q.xMin()):
+			st = best_stripe(r)
+			if st is None or connected(st):
+				continue
+			cand = None
+			for pn, r2 in self.macro_pins:
+				if pn != name:
+					continue
+				if (r2.xMin() == r.xMin() and r2.yMin() == r.yMin() and
+						r2.xMax() == r.xMax() and r2.yMax() == r.yMax()):
+					continue
+				st2 = best_stripe(r2)
+				if st2 is None or not connected(st2):
+					continue
+				# Join in the macro-free channel: 1um past the pin, which
+				# also clears the macro's own top/bottom margin.
+				if r2.yMin() > r.yMax():
+					gap = r2.yMin() - r.yMax()
+					yj = self._snap(r.yMax() + 2000)
+				elif r2.yMax() < r.yMin():
+					gap = r.yMin() - r2.yMax()
+					yj = self._snap(r.yMin() - 2000)
+				else:
+					continue
+				if gap > 80000:
+					continue
+				x1 = self._snap((r.xMin() + r.xMax()) // 2)
+				x2 = self._snap((r2.xMin() + r2.xMax()) // 2)
+				if abs(x1 - x2) > 24000:
+					continue
+				if any(bb.xMin() < max(x1, x2) and bb.xMax() > min(x1, x2)
+						and bb.yMin() < yj and bb.yMax() > yj
+						for bb in self.macro_bbs):
+					continue
+				if cand is None or gap < cand[0]:
+					cand = (gap, r2, x1, x2, yj)
+			if cand is None:
+				continue
+			_, r2, x1, x2, yj = cand
+			w = 800
+			if yj > r.yMax():
+				ya0, ya1 = r.yMax() - 200, yj
+			else:
+				ya0, ya1 = yj, r.yMin() + 200
+			if yj < r2.yMin():
+				yb0, yb1 = yj, r2.yMin() + 200
+			else:
+				yb0, yb1 = r2.yMax() - 200, yj
+			sw = odb.dbSWire.create(net, "ROUTED")
+			odb.createSBoxes(sw, self.m4, [
+				odb.Rect(x1 - w // 2, min(ya0, ya1),
+					x1 + w // 2, max(ya0, ya1)),
+				odb.Rect(min(x1, x2) - w // 2, yj - w // 2,
+					max(x1, x2) + w // 2, yj + w // 2),
+				odb.Rect(x2 - w // 2, min(yb0, yb1),
+					x2 + w // 2, max(yb0, yb1)),
+			], "STRIPE")
+			self.reasons['strapped'] += 1
+			return 1
 		return 0
 
 	def _m3_pin(self, net, r, idx):
@@ -1356,6 +1460,24 @@ class MacroPowerVias:
 
 		n4 = 0
 		n3 = 0
+		# Every macro power pin on Metal4 and every macro bbox: used by
+		# _tie_neighbour when a stripe is completely ringless (the first
+		# vdpwr stripe at the bottom of the die).
+		self.macro_pins = []
+		self.macro_bbs = []
+		for _inst in self.reader.block.getInsts():
+			if _inst.getMaster().getName().startswith(STDCELL_PREFIXES):
+				continue
+			self.macro_bbs.append(_inst.getBBox())
+			for _it in _inst.getITerms():
+				_net = _it.getNet()
+				if _net is None or _net.getName() not in self.NETS:
+					continue
+				for _geom in _it.getGeometries():
+					_l, _r = _geom[0], _geom[1]
+					if hasattr(_l, 'getName') and _l.getName() == 'Metal4':
+						self.macro_pins.append((_net.getName(), _r))
+
 		# One Metal3 connection per (instance, net) is enough: a macro's power
 		# strips are the same net inside the macro. Each one needs a long
 		# Metal4 jog to reach a stripe, and that jog is special geometry the
