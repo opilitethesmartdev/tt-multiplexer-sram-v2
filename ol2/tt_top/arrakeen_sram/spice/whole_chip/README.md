@@ -78,11 +78,12 @@ the simulated core. This is a property of the repaired SPICE representation,
 not by itself proof of disconnected physical metal. The raw extraction
 references `vccd2` and `vssd2`, but has the `q[22]` issue below.
 
-The raw top extraction places `sram_lo/q[22]` on `vssd2`, the SRAM's ground
-net. This is an **extracted-netlist observation**, not proof of an actual
-silicon short: LEF abstraction or extraction may be responsible. The
-`MergeWellNets` step rewrites this association using the DEF; it must not be
-silently substituted into a supposedly independent physical test.
+The raw top extraction places `sram_lo/q[22]` on `vssd2`. A separate
+KLayout drawn-geometry trace now finds an actual metal/via path from the
+GDS `q[22]` label to a nearby standard-cell `VSS` label, strongly indicating
+a physical short in this baseline GDS; see `GDS_PROBE_RESULTS.md`.
+The `MergeWellNets` step rewrites the extraction using the DEF; it must not
+be silently substituted into a supposedly independent physical test.
 
 The compiler SRAM schematic provided in `../SP6TSRAM256x32.spice` cannot be
 blindly used to replace the top's SRAM black box: both have 79 identically

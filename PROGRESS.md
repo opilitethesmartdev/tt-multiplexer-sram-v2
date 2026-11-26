@@ -25,8 +25,11 @@ not a claim that `main` is safe for tapeout.
 > 129,538 node-label overlap warnings and the same `sram_lo/q[22]` to ground
 > association in Magic's extracted netlist. Each SRAM `vdd` port is also on
 > an otherwise unreferenced top-level net, while `vdd_uq5` reaches `vccd2`.
-> These observations require investigation and are not proof of physical
-> shorts or disconnections. An exploratory whole-chip ngspice run could not
+> A separate KLayout drawn-geometry trace finds a positive-area metal/via
+> path from the GDS `q[22]` label to a standard-cell `VSS` label, strongly
+> indicating a real short in this baseline GDS. SRAM power disconnection
+> remains unproven. The newer candidate GDS is not yet checked.
+> An exploratory whole-chip ngspice run could not
 > produce transient data: the raw netlist hit a `$SUB` parsing issue; a
 > reversible syntax-only rename got past that issue but ran out of memory
 > under a 4.5 GB limit. The exact inputs, output, feedback and failed logs
@@ -47,8 +50,8 @@ not a claim that `main` is safe for tapeout.
 > contains 29 empty referenced subcircuits, including the two SRAMs, ten
 > `tt_mux` instances, controller, power gates, cells and user tiles; it is
 > not a simulatable transistor hierarchy. The raw extracted SRAM low-bank
-> `q[22]` is on `vssd2`; this could be an extraction artifact and requires
-> independent investigation, not a silent netlist rewrite. The compiler's
+> `q[22]` is on `vssd2`; independent drawn-geometry analysis strongly
+> supports a real short. Do not silently rewrite it. The compiler's
 > 79-pin SRAM SPICE and the top's 79-pin SRAM abstract use different
 > positional order; blind replacement is unsafe. Adding the separately
 > extracted mux and ctrl still leaves missing/empty device models.

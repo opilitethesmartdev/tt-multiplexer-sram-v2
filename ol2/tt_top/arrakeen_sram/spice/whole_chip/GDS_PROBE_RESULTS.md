@@ -29,9 +29,43 @@ distinct DRCs or automatically confirmed shorts, but their effect on
 extracted connectivity has not been resolved.
 
 The raw full-GDS extraction, like the prior DEF/LEF extraction, associates
-`sram_lo/q[22]` with the `vssd2` supply node. These are two extraction
-modes using the same Magic technology/engine, **not** independent proof of
-a physical short. The warnings and this association require investigation.
+`sram_lo/q[22]` with `vssd2`. Those two Magic extraction modes are not
+independent. However, an additional **KLayout drawn-geometry check**, not
+using Magic net names or extraction, finds a metal/via path from the GDS
+SRAM `q[22]` label to the GDS `VSS` label of the nearby standard-cell mux.
+This strongly indicates a physical short in the baseline GDS. It does not
+establish whether the newer candidate has the same defect.
+
+### Independent geometry witness
+
+`trace_q22_short.py` checks the exact GDS hash, instance transformations,
+GDS text labels and actual drawn polygons on GF180 metal/via layers. The
+SRAM and root Metal3 polygons overlap by **0.010 × 0.140 µm** at
+`(913.920, 3230.080)`–`(913.930, 3230.220)` µm. Within a 20 × 30 µm
+window, it finds a positive-area path from the SRAM label on M3 through
+Via2, M2 and Via1 to the cell VSS label on M1. The shown bounding boxes
+are for whole merged polygons, not assertions that the entire box is filled:
+
+```text
+M3 (913.650, 3229.940, 914.300, 3244.270)
+V2 (913.980, 3229.950, 914.240, 3230.210)
+M2 (913.920, 3229.940, 914.300, 3230.220)
+V1 (913.980, 3229.950, 914.240, 3230.210)
+M1 (905.000, 3228.895, 925.000, 3231.420)
+```
+
+Reproduce with KLayout Python bindings:
+
+```sh
+python3 test_trace_q22_short.py
+python3 trace_q22_short.py /path/to/tt_gf_wrapper.gds
+```
+
+The second command intentionally exits 1 for the observed short. The
+synthetic tests pass, including missing-via and edge-only cases. This
+targeted check is not full-chip DRC/LVS and cannot prove the rest of the
+layout safe. A corrected build needs independent, unmodified physical
+verification; never apply an LVS netlist rewrite to conceal this path.
 
 The same extracted top connects each SRAM macro's `vdd` port to a distinct
 net (`top_I.sram_lo_I/vdd` or `top_I.sram_hi_I/vdd`) that appears on no
