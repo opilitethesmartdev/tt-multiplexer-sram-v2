@@ -90,6 +90,7 @@ module tt_top #(
 	wire [N_SRAM_OW-1:0] spine_top_sram_ow;
 	wire [N_SRAM_OW-1:0] spine_bot_sram_ow;
 	wire sram_side_sel;
+	wire [G_Y-1:0] sram_branch_match;
 
 	// Common SRAM interface
 	wire [N_SRAM_OW-1:0] sram_ow;
@@ -223,7 +224,10 @@ module tt_top #(
 	// Common Arrakeen SRAM
 	// --------------------
 
-	assign sram_ow = ctrl_ena
+	// On a branch without SRAM, none of the SRAM-capable muxes drives the
+	// shared spine. Do not feed that floating bus to the SRAM control logic.
+	// Qualify it using the *same* branch select and side enable as the mux.
+	assign sram_ow = (ctrl_ena && (|sram_branch_match))
 		? (sram_side_sel ? spine_top_sram_ow : spine_bot_sram_ow)
 		: {N_SRAM_OW{1'b0}};
 
@@ -292,6 +296,12 @@ module tt_top #(
 			wire [3:0] l_addr;
 			wire       l_k_one;
 			wire       l_k_zero;
+
+			// spine_iw[10:7] is si_sel[8:5], and bit 1 is si_ena,
+			// matching tt_mux's branch decoder. Masked/non-SRAM branches
+			// must never activate a potentially floating SRAM spine.
+			assign sram_branch_match[i] = SRAM_MASK[i] &&
+				l_spine_iw[1] && (l_spine_iw[10:7] == (i >> 1));
 
 			// Spine connection
 			if (i & 1) begin
@@ -375,6 +385,9 @@ module tt_top #(
 					.pg_ena (l_um_pg_ena[j])
 				);
 			end
+		end
+		else begin : masked_branch
+			assign sram_branch_match[i] = 1'b0;
 		end
 	end
 

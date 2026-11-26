@@ -53,10 +53,22 @@ module tt_gf_wrapper (
 	assign io_ana[37:32] = pad_raw[32:27];
 	assign pad_raw[32:27] = io_ana[37:32];
 
-	// Drive dedicated output and bidirectional pads only when enabled.
-	// GF180 uses active-high output enables.
-	assign pad_raw[16:9]  = io_oex[31:24] ? io_out[31:24] : 8'bz;
-	assign pad_raw[44:37] = io_oex[23:16] ? io_out[23:16] : 8'bz;
+	// Dedicated outputs are always enabled. The bidirectional pins need
+	// individual enables: a vector conditional tests the entire OE vector,
+	// and Yosys cannot reliably map inferred top-level tristates. Instantiate
+	// the GF180 tristate cells explicitly so the enable exists in the layout.
+	// These are core cells, NOT pad cells or ESD protection.
+	assign pad_raw[16:9] = io_out[31:24];
+	genvar uio_bit;
+	generate
+		for (uio_bit = 0; uio_bit < 8; uio_bit = uio_bit + 1) begin : uio_output_buffer
+			gf180mcu_fd_sc_mcu7t5v0__bufz_12 cell_I (
+				.I  (io_out[16 + uio_bit]),
+				.EN (io_oex[16 + uio_bit]),
+				.Z  (pad_raw[37 + uio_bit])
+			);
+		end
+	endgenerate
 
 	tt_top top_I (
 `ifdef USE_POWER_PINS

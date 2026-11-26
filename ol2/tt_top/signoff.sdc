@@ -81,10 +81,22 @@ set_case_analysis one [get_pins *.ctrl_I/*tbuf_spine_ow_I*/TE_B]
 # Clock
 # -----
 
-# Only clock is the ctrl_sel_inc
-# The internal sub-divided clocks are checked internally when
-# hardening tt_ctrl itself so don't bother here
-create_clock -name ctrl_inc -period 10 [ get_ports "gpio_in[39]" ]
+# The GF180 wrapper exposes raw pads, unlike the original GPIO wrapper.
+# A missing port must not silently create an unconnected virtual clock.
+# The user clock period here is an analysis assumption, not a supported
+# frequency: SRAM macro timing models and complete I/O constraints are still
+# required before this can be used as silicon timing sign-off.
+set gf_ctrl_clk [get_ports -quiet {pad_raw[1]}]
+set gf_user_clk [get_ports -quiet {pad_raw[55]}]
+if {[llength $gf_ctrl_clk] > 0} {
+	if {[llength $gf_user_clk] == 0} {
+		error {GF180 user clock pad_raw[55] is missing}
+	}
+	create_clock -name ctrl_inc -period 10 $gf_ctrl_clk
+	create_clock -name user_clk -period 100 $gf_user_clk
+} else {
+	create_clock -name ctrl_inc -period 10 [get_ports {gpio_in[39]}]
+}
 
 
 # Max delays

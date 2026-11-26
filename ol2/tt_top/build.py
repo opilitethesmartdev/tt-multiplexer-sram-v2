@@ -605,6 +605,57 @@ class ExtractSpice(Magic.SpiceExtraction):
 		)
 
 
+@Step.factory.register()
+class CheckUioTristates(Step):
+	"""Fail if synthesis lost the physical per-bit GF180 UIO enables."""
+
+	id = "TT.Top.CheckUioTristates"
+	name = "Verify synthesized UIO tristate connectivity"
+	inputs = [DesignFormat.NETLIST]
+	outputs = []
+
+	@staticmethod
+	def check(text):
+		ctrl = re.search(r'\.pad_uio_oex\s*\(\s*(.*?)\s*\)',
+			text, re.S)
+		if not ctrl:
+			raise ValueError("controller UIO output-enable bus not found")
+		bus = ctrl.group(1).strip()
+		if bus.startswith('{') and bus.endswith('}'):
+			enables = [re.sub(r'\s+', '', v)
+				for v in bus[1:-1].split(',')]
+		elif re.fullmatch(r'\\?[^\s{},]+', bus):
+			enables = [f'{bus}[{bit}]' for bit in reversed(range(8))]
+		else:
+			raise ValueError(f"unsupported UIO enable bus expression: {bus}")
+		if len(enables) != 8 or len(set(enables)) != 8:
+			raise ValueError("controller UIO enable bus is not eight distinct nets")
+		expected = {37 + bit: enables[7 - bit] for bit in range(8)}
+		actual = {}
+		pattern = (r'gf180mcu_fd_sc_mcu7t5v0__bufz_12\s+'
+			r'\\?\S+\s*\((.*?)\);')
+		for instance in re.finditer(pattern, text, re.S):
+			body = instance.group(1)
+			z = re.search(r'\.Z\s*\(\s*pad_raw\[(\d+)\]\s*\)', body)
+			if not z:
+				continue
+			pin = int(z.group(1))
+			en = re.search(r'\.EN\s*\(\s*(.*?)\s*\)', body, re.S)
+			if not en or pin in actual:
+				raise ValueError(f"missing or duplicate UIO driver for pad {pin}")
+			actual[pin] = re.sub(r'\s+', '', en.group(1))
+		if actual != expected:
+			raise ValueError(f"UIO tristate connectivity mismatch: "
+				f"expected {expected}, found {actual}")
+
+	def run(self, state_in, **kwargs):
+		if self.config['DESIGN_NAME'] == 'tt_gf_wrapper':
+			with open(state_in[DesignFormat.NETLIST], encoding='utf-8') as f:
+				self.check(f.read())
+			print("Verified all eight physical UIO tristate enables")
+		return {}, {}
+
+
 PNL_FORMAT = getattr(DesignFormat, 'POWERED_NETLIST', None)
 if PNL_FORMAT is None:
 	PNL_FORMAT = next(
@@ -771,31 +822,6 @@ class AddGLSupplyPorts(Step):
 					anchor + '\n assign vdpwr = dvdd;\n assign vgnd = dvss;',
 					1)
 
-			# Restore the uio tri-state gating that synthesis folded away.
-			# In silicon the pad cells apply pad_uio_oex; the padring-less
-			# GL simulation drives the pads straight from pad_uio_out, so a
-			# tile that configures its uio as inputs would fight the
-			# testbench and produce X. Route the controller output through
-			# an internal bus and gate it back onto the pads here.
-			old = '.pad_uio_out({pad_raw[44],'
-			i2 = text.find(old)
-			if i2 >= 0:
-				j2 = text.find('})', i2)
-				block = text[i2:j2 + 2]
-				block = re.sub(
-					r'pad_raw\[(\d+)\]',
-					lambda m: f'gl_uio_out[{int(m.group(1)) - 37}]',
-					block)
-				text = text[:i2] + block + text[j2 + 2:]
-				gate = [' wire [7:0] gl_uio_out;']
-				for b in range(8):
-					gate.append(
-						f" assign pad_raw[{37 + b}] = "
-						f"\\top_I.pad_uio_oex[{b}] ? "
-						f"gl_uio_out[{b}] : 1'bz;")
-				text = text.replace(
-					anchor, anchor + '\n' + '\n'.join(gate), 1)
-
 			print(f'AddGLSupplyPorts: added dvdd/dvss to {design}')
 
 		text, appended = self._append_missing_models(text)
@@ -821,6 +847,7 @@ class TopFlow(SequentialFlow):
 		Yosys.Synthesis,
 		Checker.YosysUnmappedCells,
 		Checker.YosysSynthChecks,
+		CheckUioTristates,
 		OpenROAD.Floorplan,
 		Odb.ApplyDEFTemplate,
 		Odb.CustomIOPlacement,
@@ -1090,8 +1117,11 @@ if __name__ == '__main__':
 
 		# Routing
 		"GRT_ALLOW_CONGESTION"  : True,
-		"GRT_REPAIR_ANTENNAS"   : False,
-		"DRT_ANTENNA_REPAIR_ITERS" : 0,
+		# Keep antenna repair enabled for the GF180 routed design. Review the
+		# resulting reports and the foundry antenna deck separately; a
+		# successful repair pass alone is not manufacturing sign-off.
+		"GRT_REPAIR_ANTENNAS"   : True,
+		"DRT_ANTENNA_REPAIR_ITERS" : 3,
 		# A healthy run terminates on its own once there are no violations
 		# left. The last remaining defect is one module<->mux net that the
 		# detailed router leaves both legally connected *and* with a redundant
