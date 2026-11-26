@@ -5,6 +5,19 @@ The SPICE testbenches, results and recorded evidence are in
 The status below describes the `silicon-safety-validation` branch; it is
 not a claim that `main` is safe for tapeout.
 
+> **Final-SPICE power-port issue:** in run `45835066447`, the custom LVS
+> repair renamed cell-body power/ground nets to `vdpwr`/`vgnd` while the
+> `final/spice` header exposes `vccd*`/`vssd*`/`vssa*` instead. No
+> digital-power or ground top-level port is referenced by a top circuit
+> element, so supplying those ports alone does not power the simulated core.
+> This is a finding about the repaired SPICE, not proof of a physical GDS
+> power disconnect. Whole-chip simulation remains blocked.
+> The exact CI PDK has now been installed and its standard-cell SPICE
+> audited; 22 referenced definitions remain empty, including power gates
+> and user macros. Device-model `.lib` sections require separate handling.
+> The locally packaged Magic 8.3.105 is too old for this PDK's tech file
+> (minimum 8.3.411) and crashed during setup; do not use it for extraction.
+
 > **Whole-chip SPICE preflight:** the raw top-level SPICE from run
 > `45835066447` was created by Magic from OpenROAD DEF/LEF
 > (`MAGIC_EXT_USE_GDS=false`), not by full-GDS transistor extraction. It

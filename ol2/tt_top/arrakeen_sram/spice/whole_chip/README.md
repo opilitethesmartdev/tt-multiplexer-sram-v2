@@ -32,6 +32,15 @@ all ten `tt_mux` instances, the controller, power gates, user tiles and
 standard-cell instances. Feeding that file alone to ngspice does not simulate
 the actual chip.
 
+The `final/spice/tt_gf_wrapper.spice` for this run has 88 top-level ports,
+but the custom LVS repair replaced cell-body nodes `vccd2`/`vssd2` with
+internal nodes `vdpwr`/`vgnd`. None of its `vccd*`, `vssd*`, or `vssa*`
+ports appears in any top-level circuit element. Connecting voltage sources
+only to those listed power and ground pins would therefore **not** power
+the simulated core. This is a property of the repaired SPICE representation,
+not by itself proof of disconnected physical metal. The raw extraction
+references `vccd2` and `vssd2`, but has the `q[22]` issue below.
+
 The raw top extraction places `sram_lo/q[22]` on `vssd2`, the SRAM's ground
 net. This is an **extracted-netlist observation**, not proof of an actual
 silicon short: LEF abstraction or extraction may be responsible. The
@@ -62,15 +71,35 @@ python3 audit_spice.py artifacts/raw_tt_gf_wrapper.spice.gz \
   --library artifacts/tt_mux.spice.gz \
   --library artifacts/tt_ctrl.spice.gz \
   --library ../SP6TSRAM256x32.spice
+python3 audit_spice.py artifacts/repaired_tt_gf_wrapper.spice.gz \
+  --library artifacts/tt_mux.spice.gz \
+  --library artifacts/tt_ctrl.spice.gz \
+  --library ../SP6TSRAM256x32.spice \
+  --library "$PDK_ROOT/gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu7t5v0/spice/gf180mcu_fd_sc_mcu7t5v0.spice"
 ```
 
-Both audits intentionally return failure. The second adds the real
+All three audits intentionally return failure. The second adds the real
 macro-level mux/controller extractions and compiler SRAM schematic but
 still reports missing/empty physical masters, the SRAM port-order mismatch,
 and the extracted `q[22]` association. Empty decorative/filler cells may be
 legitimately nonfunctional; each needs a documented waiver or model before
 declaring the circuit complete. This conservative tool does not perform
 automatic waivers, modify connections, or claim its checks are LVS.
+The third audits `final/spice` and reports its disconnected external supply
+groups as well as the missing models and SRAM pin order. With PDK version
+`1689ac3f2dc763876eaf967227c7dfe831b031ae`, the included standard-cell
+SPICE reduces the list of empty referenced subcircuits to 22. Many are
+physical filler/logo cells, but the list also includes power gates and all
+four user macros. The audit still reports `nfet_05v0` and `pfet_05v0` as
+missing because it does not resolve PDK `.lib` corner sections; those
+device subcircuits must be loaded separately from the PDK models for an
+actual simulator run. Do not read the audit as a claim that these PDK
+device models do not exist.
+
+No `runs/wokwi/final/spice/` file was found in this workspace; the above
+uses the actual `final/spice` artifact from the identified CI run. Audit a
+different `wokwi` file only after obtaining it and matching its GDS, PDK,
+macro models and pin order.
 
 ## Requirements for the actual test
 
@@ -92,5 +121,14 @@ automatic waivers, modify connections, or claim its checks are LVS.
    power/package assumptions must be recorded. A smoke test on empty
    subcircuits is not a valid substitute.
 
-References: [OpenROAD `write_cdl`](https://openroad.readthedocs.io/en/latest/main/src/README.html)
-and [OpenROAD PDN SPICE](https://openroad.readthedocs.io/en/latest/main/src/psm/README.html).
+The LVS-only SPICE does not include full parasitic R/C. Setting
+`ext2spice cthresh 0` and `rthresh 0` alone does not generate a distributed
+resistance network: full RC extraction also needs Magic's resistance
+extraction (`extresist` or a version-appropriate equivalent) and
+`ext2spice extresist on`. LibreLane's `Magic.RCX` is a separate
+full-parasitics extraction flow; verify its results before sign-off.
+
+References: [OpenROAD `write_cdl`](https://openroad.readthedocs.io/en/latest/main/src/README.html),
+[OpenROAD PDN SPICE](https://openroad.readthedocs.io/en/latest/main/src/psm/README.html),
+[LibreLane extraction settings](https://librelane.readthedocs.io/en/latest/reference/step_config_vars.html),
+and [Magic RC extraction](https://opencircuitdesign.com/magic/howto.html).

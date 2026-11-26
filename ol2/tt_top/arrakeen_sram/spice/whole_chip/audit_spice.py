@@ -152,6 +152,23 @@ def audit(paths, top):
     # net-name check only; it cannot decide whether extraction is correct.
     signals_on_supply = []
     top_sub = selected[top_key]
+    # Detect a completely disconnected group of explicit top-level supply
+    # ports. A single disconnected alias can be legitimate, but if *none*
+    # of the digital supply ports appears in the circuit body, an external
+    # source connected to those ports cannot power the simulated design.
+    disconnected_supply_groups = []
+    body_tokens = {token.lower() for line in top_sub.elements for token in line.split()}
+    groups = {
+        "digital power": {"vccd", "vccd1", "vccd2", "vdpwr", "vpwr", "vdd"},
+        "ground": {"vssd", "vssd1", "vssd2", "vssa", "vssa1", "vssa2",
+                   "vgnd", "vss"},
+    }
+    top_ports = {p.lower() for p in top_sub.ports}
+    for label, names in groups.items():
+        ports = top_ports & names
+        if ports and not (ports & body_tokens):
+            disconnected_supply_groups.append((label, sorted(ports)))
+
     for instance, nodes, master in top_sub.instances():
         if master.lower() != "sp6tsram256x32":
             continue
@@ -181,6 +198,7 @@ def audit(paths, top):
         "duplicate_implementations": sorted(duplicates),
         "bad_arity": bad_arity,
         "signals_on_supply": signals_on_supply,
+        "disconnected_supply_groups": disconnected_supply_groups,
     }
 
 
@@ -214,9 +232,12 @@ def main():
         print(f"PIN COUNT {parent}/{inst} {master}: {got}, expected {expected}")
     for inst, port, net in result["signals_on_supply"]:
         print(f"SRAM OUTPUT ON SUPPLY {inst} {port} -> {net}")
+    for group, ports in result["disconnected_supply_groups"]:
+        print(f"DISCONNECTED SUPPLY GROUP {group}: no listed port appears "
+              f"in top circuit elements: {', '.join(ports)}")
     failed = any(result[k] for k in ("empty", "missing", "port_order_mismatches",
                                       "duplicate_implementations", "bad_arity",
-                                      "signals_on_supply"))
+                                      "signals_on_supply", "disconnected_supply_groups"))
     if failed:
         print("FAIL: whole-chip transistor simulation is not ready; no connectivity repaired.")
         return 1

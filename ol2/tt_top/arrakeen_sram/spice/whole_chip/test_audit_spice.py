@@ -57,6 +57,24 @@ class AuditTests(unittest.TestCase):
             p.write_bytes(gzip.compress(b".subckt top a b\nR1 a b 1k\n.ends\n"))
             self.assertEqual(audit([p], "top")["top"].name, "top")
 
+    def test_disconnected_power_ports_detected(self):
+        text = (".subckt top vccd1 vccd2 vssd1 vssd2\n"
+                "R1 vdpwr vgnd 1k\n.ends\n")
+        with TemporaryDirectory() as d:
+            p = Path(d) / "top.spice"
+            p.write_text(text)
+            result = audit([p], "top")
+            self.assertEqual(len(result["disconnected_supply_groups"]), 2)
+
+    def test_one_connected_power_port_per_group_is_sufficient_for_audit(self):
+        text = (".subckt top vccd1 vccd2 vssd1 vssd2\n"
+                "R1 vccd2 vssd2 1k\n.ends\n")
+        with TemporaryDirectory() as d:
+            p = Path(d) / "top.spice"
+            p.write_text(text)
+            result = audit([p], "top")
+            self.assertFalse(result["disconnected_supply_groups"])
+
 
 if __name__ == "__main__":
     unittest.main()
