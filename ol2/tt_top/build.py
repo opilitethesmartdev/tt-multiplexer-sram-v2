@@ -771,6 +771,31 @@ class AddGLSupplyPorts(Step):
 					anchor + '\n assign vdpwr = dvdd;\n assign vgnd = dvss;',
 					1)
 
+			# Restore the uio tri-state gating that synthesis folded away.
+			# In silicon the pad cells apply pad_uio_oex; the padring-less
+			# GL simulation drives the pads straight from pad_uio_out, so a
+			# tile that configures its uio as inputs would fight the
+			# testbench and produce X. Route the controller output through
+			# an internal bus and gate it back onto the pads here.
+			old = '.pad_uio_out({pad_raw[44],'
+			i2 = text.find(old)
+			if i2 >= 0:
+				j2 = text.find('})', i2)
+				block = text[i2:j2 + 2]
+				block = re.sub(
+					r'pad_raw\[(\d+)\]',
+					lambda m: f'gl_uio_out[{int(m.group(1)) - 37}]',
+					block)
+				text = text[:i2] + block + text[j2 + 2:]
+				gate = [' wire [7:0] gl_uio_out;']
+				for b in range(8):
+					gate.append(
+						f" assign pad_raw[{37 + b}] = "
+						f"\\top_I.pad_uio_oex[{b}] ? "
+						f"gl_uio_out[{b}] : 1'bz;")
+				text = text.replace(
+					anchor, anchor + '\n' + '\n'.join(gate), 1)
+
 			print(f'AddGLSupplyPorts: added dvdd/dvss to {design}')
 
 		text, appended = self._append_missing_models(text)
