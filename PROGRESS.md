@@ -21,7 +21,17 @@ not a claim that `main` is safe for tapeout.
 > compiled. An SRAM raw-GDS extraction pilot completed with 4,767 warnings
 > and a different 80-pin interface including `vdd_uq5` (the compiler view
 > has 79 pins); its SPICE is preserved in `spice/whole_chip/artifacts/`.
-> A raw extraction of the full run-`45835066447` GDS is now in progress.
+> Direct extraction of the full run-`45835066447` GDS has completed:
+> 129,538 node-label overlap warnings and the same `sram_lo/q[22]` to ground
+> association in Magic's extracted netlist. These are not independent proof
+> of physical shorts. An exploratory whole-chip ngspice run could not
+> produce transient data: the raw netlist hit a `$SUB` parsing issue; a
+> reversible syntax-only rename got past that issue but ran out of memory
+> under a 4.5 GB limit. The exact inputs, output, feedback and failed logs
+> are recorded in `spice/whole_chip/GDS_PROBE_RESULTS.md`.
+> The user additionally requested a fresh extraction using `gds flatglob *`;
+> a Tcl-enabled Magic 8.3.677 build is in progress to run that command with
+> the PDK `.magicrc`. No result from the flattened extraction exists yet.
 
 > **Whole-chip SPICE preflight:** the raw top-level SPICE from run
 > `45835066447` was created by Magic from OpenROAD DEF/LEF

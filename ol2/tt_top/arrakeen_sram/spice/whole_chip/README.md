@@ -41,7 +41,9 @@ extraction validation; tying the extra port by guess would undermine the
 test. The pilot is not full-chip extraction or LVS. Its unmodified SPICE is
 in `artifacts/raw_sram_macro_from_gds.spice.gz`; SHA-256 of the uncompressed
 file is `7c2a7942631ba972f3c99627cd20ff11494696c02dafa0533a23bad66a05b14e`.
-A raw extraction of the complete run-`45835066447` GDS is in progress.
+A direct whole-chip GDS extraction has since completed; see
+[`GDS_PROBE_RESULTS.md`](GDS_PROBE_RESULTS.md) for its warnings, original
+SPICE/feedback artifacts and the failed exploratory ngspice attempts.
 
 The `final/spice/tt_gf_wrapper.spice` for this run has 88 top-level ports,
 but the custom LVS repair replaced cell-body nodes `vccd2`/`vssd2` with
