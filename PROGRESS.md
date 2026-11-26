@@ -20,7 +20,8 @@ not a claim that `main` is safe for tapeout.
 > This **partial replay excludes** module straps, signal routing, final GDS,
 > DRC and LVS. It is not a verified fix or sign-off; 12 logic cells lacked
 > an immediately adjacent free well-tap site in that replay. A complete
-> candidate CI rebuild and independent GDS verification are still required.
+> candidate CI rebuild is running as `45876531269`, on shuttle `0159531`
+> with mux `211d8bb`. Independent GDS verification remains required.
 
 > **Final-SPICE power-port issue:** in run `45835066447`, the custom LVS
 > repair renamed cell-body power/ground nets to `vdpwr`/`vgnd` while the
