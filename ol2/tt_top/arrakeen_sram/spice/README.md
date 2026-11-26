@@ -30,6 +30,8 @@ but operating the SRAM at 5 V would exceed its device rating.
   for approximately 1.8 µs, then reads both data polarities.
 - `bank_address_pipeline.spice`: holds each write address across two
   edges, then checks the first and second read edges after an address change.
+- `bank_write_address.spice`: initializes two addresses, then changes address
+  at a write edge to distinguish current versus prior write-address behavior.
 - `dual_bank_isolation.spice`: two macro instances; separately writes each
   and checks that a low-bank masked write does not alter the high bank. The
   bank enables are driven by testbench sources; this is **not** a
@@ -78,6 +80,8 @@ ngspice -b -o bank_retention.log bank_retention.spice
 python3 check_results.py bank_retention bank_retention.log
 ngspice -b -o bank_address_pipeline.log bank_address_pipeline.spice
 python3 check_results.py bank_address_pipeline bank_address_pipeline.log
+ngspice -b -o bank_write_address.log bank_write_address.spice
+python3 check_results.py bank_write_address bank_write_address.log
 ngspice -b -o dual_bank_isolation.log dual_bank_isolation.spice
 python3 check_results.py dual_bank_isolation dual_bank_isolation.log
 ```

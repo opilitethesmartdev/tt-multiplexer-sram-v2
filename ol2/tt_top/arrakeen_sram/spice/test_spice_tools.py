@@ -32,6 +32,7 @@ class TestBenchTools(unittest.TestCase):
             ("bank_functional.spice", ("Xmem",)),
             ("bank_retention.spice", ("Xmem",)),
             ("bank_address_pipeline.spice", ("Xmem",)),
+            ("bank_write_address.spice", ("Xmem",)),
             ("dual_bank_isolation.spice", ("Xl", "Xh")),
         ):
             lines = (HERE / filename).read_text(encoding="utf-8").splitlines()
@@ -53,7 +54,7 @@ class TestBenchTools(unittest.TestCase):
 
     def test_all_bank_cases(self):
         for name in ("bank_functional", "bank_retention", "bank_address_pipeline",
-                     "dual_bank_isolation"):
+                     "bank_write_address", "dual_bank_isolation"):
             with self.subTest(name=name):
                 self.assertEqual(check_values(name, bank_log(name), MANIFEST, 3.3), [])
 

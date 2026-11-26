@@ -56,12 +56,24 @@ against `rtl/SP6TSRAM256x32.v` and passes the three expected words with
 Icarus Verilog. That confirms the expectations match the behavioral model;
 it does not establish which circuit behavior is intended.
 
-This pattern is consistent with an extra read-address cycle, but is not yet
-proven to be the root cause: it could also involve write/address timing or
-the testbench. `bank_address_pipeline.spice` deliberately holds each
-write address for two edges, then tests first and second read edges; that
-diagnostic is running. Do not alter expected values merely to make this
-test pass, or claim the chip's SRAM works from the behavioral/GL tests.
+The follow-up `bank_address_pipeline.spice` test holds each write address
+across two edges before changing it, then checks the first and second
+read edges. It **passes** at the same corner:
+
+| Sample | Time | Expected | SPICE observed |
+|---|---:|---:|---:|
+| s0, first read at address 0 | 980 ns | `aa55aa55` | `aa55aa55` |
+| s1, second read at address 0 | 1180 ns | `aa55aa55` | `aa55aa55` |
+| s2, first read at address 255 | 1380 ns | `55aa55aa` | `55aa55aa` |
+| s3, second read at address 255 | 1580 ns | `55aa55aa` | `55aa55aa` |
+
+This makes a simple extra read-address-cycle explanation less likely and
+points toward **write-address timing**, but the cause is not yet proven.
+`bank_write_address.spice` initializes both words, changes the address at a
+write edge, then reads both locations to distinguish current versus
+previous write address. Its behavioral Verilog reference passes; the SPICE
+diagnostic has not yet completed. Do not alter expected values merely to
+make tests pass, or claim the chip's SRAM works from the GL tests.
 
 Full-bank retention and two-bank isolation have not been run with the real
 macro. Their decks do run with a deliberately nonfunctional dummy macro,

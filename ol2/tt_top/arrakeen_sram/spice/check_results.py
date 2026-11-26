@@ -74,7 +74,8 @@ def check_values(test, log, manifest, vdd):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("test", choices=("bitcell", "bank_functional", "bank_retention",
-                                        "bank_address_pipeline", "dual_bank_isolation"))
+                                        "bank_address_pipeline", "bank_write_address",
+                                        "dual_bank_isolation"))
     parser.add_argument("log", type=Path)
     parser.add_argument("--expected", type=Path, default=Path("expected.json"))
     parser.add_argument("--vdd", type=float, default=3.3)

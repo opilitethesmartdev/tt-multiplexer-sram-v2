@@ -30,6 +30,20 @@ module bank_verilog_reference_tb;
 		cycle(0,   0, 32'h0);
 		if (q !== 32'haa34aa78) $fatal(1, "s2 %h", q);
 		$display("PASS behavioral reference expectations");
+
+		// Mirror bank_write_address.spice: initialize both locations,
+		// then change the address at the write edge.
+		cycle(0,   0, 0);
+		cycle(0,   15, 0);
+		cycle(255, 0, 0);
+		cycle(255, 15, 0);
+		cycle(0,   0, 0);
+		cycle(255, 15, 32'haa55aa55);
+		cycle(0,   0, 0);
+		if (q !== 32'haa55aa55) $fatal(1, "write-address s0 %h", q);
+		cycle(255, 0, 0);
+		if (q !== 32'h0) $fatal(1, "write-address s1 %h", q);
+		$display("PASS behavioral write-address expectations");
 		$finish;
 	end
 endmodule

@@ -185,6 +185,14 @@ def main():
                       (1300, 255, 0, 0), (1500, 255, 0, 0)]
     address_samples = [("s0", 980, a), ("s1", 1180, a),
                        ("s2", 1380, b), ("s3", 1580, b)]
+    # Initialize both words to zero with stable addresses, capture address 0,
+    # then change to 255 at the write edge. The Verilog writes the previously
+    # captured address 0; a circuit writing the current address writes 255.
+    write_address_events = [(100, 0, 0, 0), (300, 0, 15, 0),
+                            (500, 255, 0, 0), (700, 255, 15, 0),
+                            (900, 0, 0, 0), (1100, 255, 15, a),
+                            (1300, 0, 0, 0), (1500, 255, 0, 0)]
+    write_address_samples = [("s0", 1380, a), ("s1", 1580, 0)]
     dual_events = [(100, 3, 0, 0, 0), (300, 3, 15, 0, a),
                    (500, 3, 0, 15, b), (700, 3, 0, 0, 0),
                    (900, 3, 5, 0, c), (1100, 3, 0, 0, 0)]
@@ -200,6 +208,9 @@ def main():
         ("bank_address_pipeline.spice", bank_deck(
             "Single bank: address held for writes, first versus second read edge",
             address_events, address_samples, 1650)),
+        ("bank_write_address.spice", bank_deck(
+            "Single bank: distinguish previous versus current write address",
+            write_address_events, write_address_samples, 1650)),
         ("dual_bank_isolation.spice", dual_bank_deck(dual_events, dual_samples)),
     ):
         (args.output / name).write_text(content, encoding="utf-8")
@@ -207,7 +218,8 @@ def main():
                        for sample, time, word in samples]
                 for name, samples in (("bank_functional", functional_samples),
                                       ("bank_retention", retention_samples),
-                                      ("bank_address_pipeline", address_samples))}
+                                      ("bank_address_pipeline", address_samples),
+                                      ("bank_write_address", write_address_samples))}
     manifest["dual_bank_isolation"] = [
         {"sample": sample, "time_ns": time, "low": f"{low:08x}", "high": f"{high:08x}"}
         for sample, time, low, high in dual_samples

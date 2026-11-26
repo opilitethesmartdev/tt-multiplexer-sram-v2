@@ -55,6 +55,18 @@
       "expected": "55aa55aa"
     }
   ],
+  "bank_write_address": [
+    {
+      "sample": "s0",
+      "time_ns": 1380,
+      "expected": "aa55aa55"
+    },
+    {
+      "sample": "s1",
+      "time_ns": 1580,
+      "expected": "00000000"
+    }
+  ],
   "dual_bank_isolation": [
     {
       "sample": "s0",

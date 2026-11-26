@@ -13,12 +13,13 @@ not a claim that `main` is safe for tapeout.
 > files. Those models have not been established identical to the CI-pinned
 > PDK. The full 256x32 `bank_functional` simulation **fails** the behavioral
 > model's expected data: samples s0/s1/s2 expected `aa34aa78/55aa55aa/
-> aa34aa78`, observed `55aa55aa/aa34aa78/55aa55aa`. This suggests a possible
-> read-address cycle mismatch but write timing/testbench errors remain
-> possible. An independent Icarus replay of the same operations against the
-> compiler Verilog model passes the expected values. A second test
-> (`bank_address_pipeline`) holds write addresses over
-> two edges and checks first vs second read edges; that test is running.
+> aa34aa78`, observed `55aa55aa/aa34aa78/55aa55aa`. An independent Icarus
+> replay of the same operations against the compiler Verilog model passes.
+> A follow-up SPICE test (`bank_address_pipeline`) holding write addresses
+> for two edges **passes** on both first and second read edges. This points
+> toward write-address timing rather than an additional read cycle, but is
+> not conclusive. `bank_write_address` isolates that question; its Verilog
+> reference passes and its SPICE simulation has not yet completed.
 > Retention and two-bank decks are not yet validated on the real macro. The
 > original three bank
 > decks parse/run with a deliberately nonfunctional dummy macro, and the
