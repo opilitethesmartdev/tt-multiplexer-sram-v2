@@ -29,9 +29,14 @@ not a claim that `main` is safe for tapeout.
 > reversible syntax-only rename got past that issue but ran out of memory
 > under a 4.5 GB limit. The exact inputs, output, feedback and failed logs
 > are recorded in `spice/whole_chip/GDS_PROBE_RESULTS.md`.
-> The user additionally requested a fresh extraction using `gds flatglob *`;
-> a Tcl-enabled Magic 8.3.677 build is in progress to run that command with
-> the PDK `.magicrc`. No result from the flattened extraction exists yet.
+> The user additionally requested a fresh extraction using `gds flatglob *`.
+> A standalone Magic 8.3.677 pilot on the SRAM GDS discarded the top cell
+> and reported "nothing here to extract"; no usable pilot SPICE resulted.
+> The exact Tcl invocation on the whole-chip GDS also reported "nothing here
+> to extract" and created no SPICE because `flatglob *` matched the top.
+> Flattening all 53 SRAM child cells while excluding its root produced a flat
+> 52,414-transistor-line SPICE pilot (not LVS-validated). The corresponding
+> whole-chip extraction using 432 exact child patterns is running.
 
 > **Whole-chip SPICE preflight:** the raw top-level SPICE from run
 > `45835066447` was created by Magic from OpenROAD DEF/LEF

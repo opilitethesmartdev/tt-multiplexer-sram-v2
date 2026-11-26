@@ -45,6 +45,23 @@ A direct whole-chip GDS extraction has since completed; see
 [`GDS_PROBE_RESULTS.md`](GDS_PROBE_RESULTS.md) for its warnings, original
 SPICE/feedback artifacts and the failed exploratory ngspice attempts.
 
+## Requested flatglob extraction
+
+Running the requested `gds flatglob *` sequence on the whole-chip GDS with
+Magic 8.3.677 and the pinned PDK `.magicrc` produced **no SPICE**: the
+pattern also matched `tt_gf_wrapper`, and Magic reported "There is nothing
+here to extract." The original log is `artifacts/flatglob_star_wholechip.log.gz`.
+
+As a controlled alternative, `make_child_flat_tcl.py` enumerates GDS cell
+names with `gdstk` and emits an exact `gds flatglob` pattern for each child,
+deliberately excluding the root. A pilot with the SRAM GDS produced one
+flat subcircuit with 52,414 transistor instance lines. Its unmodified
+SPICE is `artifacts/childflat_sram_from_gds.spice.gz`, uncompressed SHA-256
+`2fad185c295c5b6907008f8fc5f429e29096e6d4fbf281dd7214ad4d2b53c5cc`.
+It has an extra `vdd_uq0` port and has not passed independent LVS.
+The whole-chip child-only flatten extraction is in progress; do not assume
+it will fit in memory or produce a correct netlist.
+
 The `final/spice/tt_gf_wrapper.spice` for this run has 88 top-level ports,
 but the custom LVS repair replaced cell-body nodes `vccd2`/`vssd2` with
 internal nodes `vdpwr`/`vgnd`. None of its `vccd*`, `vssd*`, or `vssa*`
