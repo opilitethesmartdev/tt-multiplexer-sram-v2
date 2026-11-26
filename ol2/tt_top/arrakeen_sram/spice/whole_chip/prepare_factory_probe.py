@@ -15,7 +15,19 @@ from normalize_magic_spice import normalize
 
 
 EXPECTED_GDS_SPICE_SHA256 = "87b2ef7725362b3d7d5ffff650acb6c39ca0553a32a6879f46a8a20003865c72"
+EXPECTED_FLAT_SPICE_SHA256 = "18bedde2e2e65f4287d4fb4f9595ea24fbd719092d82ae7b6426ff6f7732f2d2"
 DEVICE_SUBCKTS = {"nfet_03v3", "pfet_03v3", "nfet_05v0", "pfet_05v0"}
+FLAT_SUPPLY_PORTS = {
+    "vccd", "vccd2", "vdda", "vdda2", "vddio", "vssd", "vssd2",
+    "vssio", "vssio_uq0", "vssio_uq1", "vssio_uq2", "vccd_uq0",
+    "vddio_uq0", "vddio_uq1", "vddio_uq2",
+}
+
+
+def validate_flat_ports(ports):
+    expected = {f"pad_raw[{n}]" for n in range(74)} | FLAT_SUPPLY_PORTS
+    if len(ports) != len(expected) or set(ports) != expected:
+        raise ValueError("unexpected flat-extraction top ports")
 
 
 def quote(path):
@@ -98,8 +110,9 @@ def main():
         raw = args.raw_spice.resolve(strict=True)
         original = raw.read_bytes()
         digest = hashlib.sha256(original).hexdigest()
-        if digest != EXPECTED_GDS_SPICE_SHA256:
+        if digest not in {EXPECTED_GDS_SPICE_SHA256, EXPECTED_FLAT_SPICE_SHA256}:
             raise ValueError(f"unrecognized raw GDS SPICE hash: {digest}")
+        is_flat = digest == EXPECTED_FLAT_SPICE_SHA256
         design = (args.model_dir / "design.ngspice").resolve(strict=True)
         model = (args.model_dir / "sm141064.ngspice").resolve(strict=True)
         result = audit([raw], "tt_gf_wrapper")
@@ -107,7 +120,9 @@ def main():
             raise ValueError("unexpected hierarchy; inspect with audit_spice.py")
         if result["bad_arity"] or result["disconnected_supply_groups"]:
             raise ValueError("unexpected top arity or supply-port problem")
-        if len(result["top"].ports) != 96:
+        if is_flat:
+            validate_flat_ports(result["top"].ports)
+        elif len(result["top"].ports) != 96:
             raise ValueError("unexpected top-level port count")
         simulation = raw
         if args.simulation_copy:
@@ -121,9 +136,15 @@ def main():
             raise ValueError(f"refusing to overwrite {args.output}")
         args.output.write_text(text, encoding="utf-8", newline="\n")
         print("Prepared exploratory deck; no extracted connectivity was altered.")
-        print("WARNING: raw GDS extraction reports q[22] on ground, two "
-              "unsourced SRAM vdd nets, and 129538 label-overlap warnings; "
-              "this run cannot establish silicon safety.")
+        if is_flat:
+            print("WARNING: flat extraction aliases q[22] to ground and a "
+                  "branch enable to vccd2; 13 supply-like ports do not "
+                  "appear on device lines. All supply groups are tied by "
+                  "an unverified testbench assumption. This is not sign-off.")
+        else:
+            print("WARNING: raw GDS extraction reports q[22] on ground, two "
+                  "unsourced SRAM vdd nets, and 129538 label-overlap warnings; "
+                  "this run cannot establish silicon safety.")
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
 

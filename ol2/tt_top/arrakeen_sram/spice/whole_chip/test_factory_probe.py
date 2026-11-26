@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 
 from check_factory_probe import check
-from prepare_factory_probe import deck, map_port
+from prepare_factory_probe import deck, map_port, validate_flat_ports, FLAT_SUPPLY_PORTS
 from normalize_magic_spice import normalize
 
 
@@ -24,6 +24,14 @@ class FactoryProbeTests(unittest.TestCase):
         self.assertEqual(map_port("vssio_uq2"), "0")
         with self.assertRaises(ValueError):
             map_port("unknown_supply")
+
+    def test_flat_port_set_is_fail_closed(self):
+        ports = [f"pad_raw[{n}]" for n in range(74)] + sorted(FLAT_SUPPLY_PORTS)
+        validate_flat_ports(ports)
+        with self.assertRaises(ValueError):
+            validate_flat_ports(ports[:-1] + [ports[0]])
+        with self.assertRaises(ValueError):
+            validate_flat_ports(ports[:-1])
 
     def test_valid_log(self):
         errors, current = check(good_log())

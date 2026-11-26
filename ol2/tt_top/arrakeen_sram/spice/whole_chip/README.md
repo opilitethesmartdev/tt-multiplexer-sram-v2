@@ -66,8 +66,11 @@ SPICE is `artifacts/childflat_sram_from_gds.spice.gz`, uncompressed SHA-256
 It has an extra `vdd_uq0` port and has not passed independent LVS.
 The whole-chip child-only flatten extraction failed at a 4.5 GB
 virtual-memory limit during GDS import (`artifacts/childflat_wholechip_4p5gb_failed.log.gz`);
-a bounded 7 GB retry is running. No whole-chip flattened SPICE is available
-or independently validated yet.
+the bounded 7 GB retry completed with 12 Magic extraction warnings and
+produced a flat device netlist. Its raw output and log are preserved in
+`artifacts/childflat_tt_gf_wrapper_from_gds.spice.gz` and
+`artifacts/childflat_wholechip_7gb.log.gz`. The flat netlist has not passed
+independent LVS or functional simulation; see `GDS_PROBE_RESULTS.md`.
 
 The `final/spice/tt_gf_wrapper.spice` for this run has 88 top-level ports,
 but the custom LVS repair replaced cell-body nodes `vccd2`/`vssd2` with

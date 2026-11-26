@@ -44,7 +44,12 @@ not a claim that `main` is safe for tapeout.
 > Flattening all 53 SRAM child cells while excluding its root produced a flat
 > 52,414-transistor-line SPICE pilot (not LVS-validated). The corresponding
 > whole-chip extraction using 432 exact child patterns failed at a 4.5 GB
-> virtual-memory limit during GDS import; a bounded 7 GB retry is running.
+> virtual-memory limit during GDS import; a 7,000,000 KiB retry completed
+> with 12 warnings. Its raw flat netlist has 847,235 MOS instances and
+> maps `q[22]` to ground. One branch power-gate enable also aliases `vccd2`;
+> that second association requires independent investigation. Supply-port
+> mapping is unverified; a bounded exploratory flat ngspice run is in
+> progress, and no flat whole-chip transient result is claimed.
 
 > **Whole-chip SPICE preflight:** the raw top-level SPICE from run
 > `45835066447` was created by Magic from OpenROAD DEF/LEF

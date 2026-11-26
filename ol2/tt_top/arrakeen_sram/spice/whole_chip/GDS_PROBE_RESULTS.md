@@ -134,6 +134,58 @@ PDK files used:
 | standard-cell `spice` | `0e126c5e10e45e705a83acfa47f6fd2c4ef0357e99c339dec43cdc16bfb13664` |
 | `gf180mcuD.tech` | `3393fd8c487b80926d0a0235694a3523df8a8d88614c773b814a02d8f2070a25` |
 
+## Child-only flat GDS extraction
+
+The requested literal `gds flatglob *` discarded the root and produced no
+SPICE. The separate root-preserving method generated 432 exact child
+patterns and excluded `tt_gf_wrapper`. With the same baseline GDS, PDK and
+Magic, a 4.5 GB virtual-memory limit failed during GDS import, whereas a
+7,000,000 KiB limit completed. The unmodified output and process log are:
+
+- `artifacts/childflat_tt_gf_wrapper_from_gds.spice.gz`, whose uncompressed
+  SHA-256 is `18bedde2e2e65f4287d4fb4f9595ea24fbd719092d82ae7b6426ff6f7732f2d2`.
+- `artifacts/childflat_wholechip_7gb.log.gz`; Magic reports 12 extraction
+  warnings and six pairs of electrically shorted top ports. No separate
+  detailed Magic feedback file was saved for this run.
+- `artifacts/childflat_wholechip_equivs.txt.gz` contains all 11 `equiv`
+  lines selected from the raw `.ext`, **not** the complete `.ext`. The
+  full raw 674,030,276-byte `.ext` is retained locally at
+  `C:\Users\opilite\AppData\Local\Temp\opencode\whole-chip-childflat-gds-677-7gb\tt_gf_wrapper.ext`,
+  SHA-256 `fdef1af9bdd8457fba27eb130f2180f7650c7d494f565f23f5493304161451a5`.
+
+The flat file has a single complete `tt_gf_wrapper` subcircuit, 89 ports,
+847,235 MOS subcircuit instances, and 12,926 diode elements. The device
+counts match the prior hierarchical expansion, which is a useful structural
+cross-check, **not** LVS. Its 74 `pad_raw` ports and 15 supply-like ports
+are ordered as written in the extracted header. Only `vccd2` and `vssd2`
+appear by name on device-element lines; the other 13 supply-like top ports
+do not. This is an observation about the netlist, not proof of physical
+disconnection, and the extracted aliases and actual pad-ring mapping need
+verification. The four MOS device subcircuits and diode models must be
+provided from the correct PDK. This LVS-mode extraction is not PEX.
+
+The raw flat `.ext` maps `top_I.sram_q_lo[22]` to `vssd2`, consistent with
+the independent geometry witness above. It also maps
+`top_I.branch[14].check_mask.l_um_pg_ena[1]` to `vccd2`; the DEF calls that
+branch enable a signal net. This is an additional unverified extracted
+association, not an independent determination of a physical short. The
+flat hierarchy does not preserve the SRAM `vdd` macro-port boundaries, so it
+cannot by itself resolve the separate hierarchical SRAM supply observation.
+
+An exploratory flat-netlist ngspice run is in progress under a 7,000,000
+KiB virtual-memory limit. It uses the same factory stimulus and ties all
+listed power groups to 3.3 V and all grounds together in the testbench;
+these are **unverified assumptions**, not established physical pin mapping.
+No flat whole-chip transient result is claimed yet. Even a functional pass
+would not resolve the identified physical/connectivity defects. The earlier
+ngspice failure was on the hierarchical file and does not establish the
+flat file's memory requirement. Neither netlist has been silently rewired.
+
+Reproduce the exploratory flat deck by replacing the `--raw-spice` argument
+in the instructions below with the decompressed flat artifact and omitting
+`--simulation-copy`; unlike the hierarchical netlist it has no `$SUB`
+tokens. The generator checks the input hash and exact extracted port set.
+
 ## Reproduce the exploratory deck
 
 With the matching PDK and sufficient resources, in this directory:
