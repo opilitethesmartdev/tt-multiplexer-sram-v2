@@ -10,6 +10,7 @@ See `../RESULTS.md` for conditions, model hashes, interpretation and limits.
 | `bitcell-ss` | Slow-slow 3.3 V, 25 °C bitcell log and analog waveform |
 | `bank-functional-typical` | Typical 3.3 V, 25 °C full-bank log and waveform; the checker **fails** |
 | `bank-address-pipeline-typical` | Typical 3.3 V, 25 °C full-bank log and waveform; the checker passes |
+| `bank-write-address-typical` | Typical 3.3 V, 25 °C write-address diagnostic; the checker **fails** |
 
 Each `wrdata` waveform has a time column followed by a value column for
 each saved signal. The source decks list the signal order. The local GF180

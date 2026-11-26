@@ -30,8 +30,9 @@ copy of the CI-pinned PDK:
 | Schematic used in runs | `ded51756ada5136e4777cd545d54bb30c300573c1260c99e284450612291e799` |
 | Repository `SP6TSRAM256x32.spice` (LF endings) | `d1a8516ef17c698f8b04be36ef70edeab62346ed32bea8319d99494a89bbd6ae` |
 
-The schematic used in the runs has Windows line endings and one additional
-trailing blank line; its normalized circuit text otherwise matches.
+The initial bitcell and bank tests used Windows line endings and one
+additional trailing blank line; normalized circuit text otherwise matches
+the repository version. The write-address test used the repository version.
 
 The shipped SRAM GDS in the mux repository and the GDS from workflow
 `45835066447` both hash to
@@ -67,13 +68,23 @@ read edges. It **passes** at the same corner:
 | s2, first read at address 255 | 1380 ns | `55aa55aa` | `55aa55aa` |
 | s3, second read at address 255 | 1580 ns | `55aa55aa` | `55aa55aa` |
 
-This makes a simple extra read-address-cycle explanation less likely and
-points toward **write-address timing**, but the cause is not yet proven.
 `bank_write_address.spice` initializes both words, changes the address at a
 write edge, then reads both locations to distinguish current versus
-previous write address. Its behavioral Verilog reference passes; the SPICE
-diagnostic has not yet completed. Do not alter expected values merely to
-make tests pass, or claim the chip's SRAM works from the GL tests.
+previous write address. Its behavioral Verilog reference passes, but the
+SPICE schematic **fails** at the same PVT point:
+
+| Address read | Behavioral expected | SPICE observed |
+|---|---:|---:|
+| Previous address 0 | `aa55aa55` | `00000000` |
+| Current address 255 | `00000000` | `aa55aa55` |
+
+Thus, under this stimulus, the compiler's transistor schematic writes the
+current address, while its supplied Verilog model writes the previous
+latched address. The integrated wrapper delays write enable and data but not
+the address. This is a serious SRAM functional mismatch, not a full-chip
+simulation result; confirm the final GDS with an unmodified physical
+extraction/LVS before deciding a hardware change. Do not alter expected
+values merely to make tests pass or claim the SRAM works from the GL tests.
 
 Full-bank retention and two-bank isolation have not been run with the real
 macro. Their decks do run with a deliberately nonfunctional dummy macro,

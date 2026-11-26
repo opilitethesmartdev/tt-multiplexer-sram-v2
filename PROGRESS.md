@@ -5,6 +5,24 @@ The SPICE testbenches, results and recorded evidence are in
 The status below describes the `silicon-safety-validation` branch; it is
 not a claim that `main` is safe for tapeout.
 
+> **Whole-chip SPICE preflight:** the raw top-level SPICE from run
+> `45835066447` was created by Magic from OpenROAD DEF/LEF
+> (`MAGIC_EXT_USE_GDS=false`), not by full-GDS transistor extraction. It
+> contains 29 empty referenced subcircuits, including the two SRAMs, ten
+> `tt_mux` instances, controller, power gates, cells and user tiles; it is
+> not a simulatable transistor hierarchy. The raw extracted SRAM low-bank
+> `q[22]` is on `vssd2`; this could be an extraction artifact and requires
+> independent investigation, not a silent netlist rewrite. The compiler's
+> 79-pin SRAM SPICE and the top's 79-pin SRAM abstract use different
+> positional order; blind replacement is unsafe. Adding the separately
+> extracted mux and ctrl still leaves missing/empty device models.
+> The run's placed modules contain no `uses_sram: true` user tile, so this
+> build cannot exercise SRAM through its normal chip interface.
+>
+> Reproducible original CI artifacts and a fail-closed hierarchy audit are
+> in `ol2/tt_top/arrakeen_sram/spice/whole_chip/`. A complete mux SPICE
+> simulation and independent physical LVS/PEX remain **not done**.
+
 > **SPICE work:** `tt-multiplexer-sram-v2/ol2/tt_top/arrakeen_sram/spice/`
 > contains ngspice decks and a hierarchical transistor schematic exported
 > from the Arrakeen compiler (not extracted from GDS). The 6T bitcell
@@ -16,10 +34,12 @@ not a claim that `main` is safe for tapeout.
 > aa34aa78`, observed `55aa55aa/aa34aa78/55aa55aa`. An independent Icarus
 > replay of the same operations against the compiler Verilog model passes.
 > A follow-up SPICE test (`bank_address_pipeline`) holding write addresses
-> for two edges **passes** on both first and second read edges. This points
-> toward write-address timing rather than an additional read cycle, but is
-> not conclusive. `bank_write_address` isolates that question; its Verilog
-> reference passes and its SPICE simulation has not yet completed.
+> for two edges **passes** on both first and second read edges. The targeted
+> `bank_write_address` transistor test then **fails**: the SPICE compiler
+> schematic writes the current address 255 rather than previous address 0,
+> while the compiler Verilog model predicts the opposite. The integrated
+> wrapper delays write enable and data but not address. The final GDS has not
+> independently been shown to match this transistor schematic.
 > Retention and two-bank decks are not yet validated on the real macro. The
 > original three bank
 > decks parse/run with a deliberately nonfunctional dummy macro, and the
