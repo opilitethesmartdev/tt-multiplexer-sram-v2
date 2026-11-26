@@ -27,8 +27,10 @@ not a claim that `main` is safe for tapeout.
 > an otherwise unreferenced top-level net, while `vdd_uq5` reaches `vccd2`.
 > A separate KLayout drawn-geometry trace finds a positive-area metal/via
 > path from the GDS `q[22]` label to a standard-cell `VSS` label, strongly
-> indicating a real short in this baseline GDS. SRAM power disconnection
-> remains unproven. The newer candidate GDS is not yet checked.
+> indicating a real short in this baseline GDS. The DEF identifies a ground
+> via stack at the SRAM boundary; the candidate uses the same power-router
+> source but its GDS is not yet checked. SRAM power disconnection remains
+> unproven.
 > An exploratory whole-chip ngspice run could not
 > produce transient data: the raw netlist hit a `$SUB` parsing issue; a
 > reversible syntax-only rename got past that issue but ran out of memory

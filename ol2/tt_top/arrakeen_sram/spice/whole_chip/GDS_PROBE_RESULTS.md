@@ -67,6 +67,28 @@ targeted check is not full-chip DRC/LVS and cannot prove the rest of the
 layout safe. A corrected build needs independent, unmodified physical
 verification; never apply an LVS netlist rewrite to conceal this path.
 
+### Likely power-routing mechanism
+
+In the same run's original final DEF, which uses 2000 units/µm, the `vgnd`
+special net contains the Via1–Via3 stack at `(1828220, 6460160)`:
+
+```text
+NEW Metal3 0 + SHAPE STRIPE ( 1828220 6460160 ) vg_7dc3c90f_1x1
+NEW Metal2 0 + SHAPE STRIPE ( 1828220 6460160 ) vg_7dc3c8e9_1x1
+NEW Metal1 0 + SHAPE STRIPE ( 1828220 6460160 ) vg_7dc400a5_1x1
+```
+
+The stack center is on the SRAM bottom boundary; its Metal3 enclosure
+overlaps the `q[22]` Metal3 geometry. `StdCellPower` in `odb_route.py`
+inserts such stacks, while its macro path test checks the riser center and
+vertical interval rather than the full via enclosure at a boundary. This is
+a plausible mechanism, not yet a proven complete root-cause analysis.
+There is no difference in `odb_route.py` between baseline mux `2914d8a`
+and candidate `131bf55`. Placement can change, so this does not establish
+the candidate has the same short. A robust fix needs enclosure-aware
+clearance checks against signal geometry and independently verified power
+connectivity, not merely shifting this one known via or repairing LVS.
+
 The same extracted top connects each SRAM macro's `vdd` port to a distinct
 net (`top_I.sram_lo_I/vdd` or `top_I.sram_hi_I/vdd`) that appears on no
 other top-level component, while `vdd_uq5` connects to `vccd2`. In this
