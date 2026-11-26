@@ -675,12 +675,69 @@ class AddGLSupplyPorts(Step):
 				continue
 			with open(path, encoding='utf-8', errors='replace') as f:
 				body = f.read()
+
+			if mod == 'SP6TSRAM256x32':
+				# The netlist connects the macro's vdd/vss pins, but the
+				# behavioral model only has the signal pins.
+				body = re.sub(
+					r'(?m)^module\s+SP6TSRAM256x32\s*\(([^)]*)\)\s*;',
+					r'module SP6TSRAM256x32(\1, vdd, vss);\n'
+					'  input wire vdd;\n  input wire vss;',
+					body, count=1)
+
 			text += (
 				f'\n// GL model for {mod}: not in includes.gl.mux_top, '
 				f'folded into the submission netlist.\n' + body + '\n')
 			defined.add(mod)
 			appended.append(mod)
 		return text, appended
+
+	def _patch_pdk_default_nettype(self):
+		"""Let the PDK's Verilog-2001 models compile under -g2012.
+
+		The shuttle GL Makefile compiles everything with `-g2012`
+		(SystemVerilog), where implicit nets are illegal. The GF180 std cell
+		functional models rely on them (`MGM_P0`, `IQ1`, ...), so iverilog
+		reports thousands of 'Net ... is not defined in this context'
+		errors before it ever reaches our netlist. Explicitly allowing
+		implicit nets at the top of the library keeps sign-off (which uses
+		LEF/SPICE/GDS, not this Verilog) untouched and makes the simulation
+		harness usable.
+		"""
+		pdk_root = os.getenv('PDK_ROOT')
+		pdk = os.getenv('PDK', 'gf180mcuD')
+		if not pdk_root:
+			return []
+		patched = []
+		cands = (
+			('gf180mcu_fd_sc_mcu7t5v0', 'gf180mcu_fd_sc_mcu7t5v0.v'),
+			('gf180mcu_fd_sc_mcu7t5v0', 'primitives.v'),
+			('gf180mcu_ocd_io', 'gf180mcu_ocd_io.v'),
+			('gf180mcu_fd_io', 'gf180mcu_fd_io.v'),
+		)
+		for lib, fn in cands:
+			path = os.path.join(
+				pdk_root, pdk, 'libs.ref', lib, 'verilog', fn)
+			if not os.path.isfile(path):
+				continue
+			try:
+				with open(path, encoding='utf-8', errors='replace') as f:
+					text = f.read()
+				if text.lstrip().startswith('`default_nettype wire'):
+					continue
+				# Replace an explicit `none` if the merged library has one;
+				# otherwise put `wire` before the first module.
+				if '`default_nettype none' in text:
+					text = text.replace(
+						'`default_nettype none', '`default_nettype wire')
+				else:
+					text = '`default_nettype wire\n' + text
+				with open(path, 'w', encoding='utf-8') as f:
+					f.write(text)
+				patched.append(path)
+			except OSError as e:
+				print(f'AddGLSupplyPorts: cannot patch {path}: {e}')
+		return patched
 
 	def run(self, state_in, **kwargs):
 		src = state_in[PNL_FORMAT]
@@ -720,6 +777,11 @@ class AddGLSupplyPorts(Step):
 		if appended:
 			print('AddGLSupplyPorts: folded in GL models for '
 				+ ', '.join(appended))
+
+		patched = self._patch_pdk_default_nettype()
+		if patched:
+			print('AddGLSupplyPorts: allowed implicit nets in '
+				+ ', '.join(patched))
 
 		with open(dst, 'w', encoding='utf-8') as f:
 			f.write(text)
