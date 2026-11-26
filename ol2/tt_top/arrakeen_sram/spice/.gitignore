@@ -1,0 +1,5 @@
+models.spice
+*.log
+*_wave.dat
+*.raw
+__pycache__/

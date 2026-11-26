@@ -1,0 +1,38 @@
+* Actual Arrakeen 6T bitcell: write, hold and read
+* Compiler schematic; not post-layout extraction.
+.include "models.spice"
+.include "SP6TSRAM256x32.spice"
+.param VDD=3.3
+.temp 25
+.options reltol=1e-3 klu
+Vdd vdd 0 DC {VDD}
+Xbit 0 0 vdd vdd wl bl blb SP6TCell
+Cbl bl 0 10f
+Cblb blb 0 10f
+.model sw sw(ron=10 roff=1e12 vt=1.65 vh=0)
+Sp0 bl  vdd pre 0 sw
+Sp1 blb vdd pre 0 sw
+Sw00 bl  0   w0 0 sw
+Sw01 blb vdd w0 0 sw
+Sw10 bl  vdd w1 0 sw
+Sw11 blb 0   w1 0 sw
+Vwl wl 0 PWL(0n 0 10n 0 11n {VDD} 30n {VDD} 31n 0 60n 0 61n {VDD} 80n {VDD} 81n 0 100n 0 101n {VDD} 120n {VDD} 121n 0 150n 0 151n {VDD} 170n {VDD} 171n 0)
+Vw0 w0 0 PWL(0n 0 2n 0 3n {VDD} 35n {VDD} 36n 0)
+Vw1 w1 0 PWL(0n 0 92n 0 93n {VDD} 125n {VDD} 126n 0)
+Vpre pre 0 PWL(0n 0 40n 0 41n {VDD} 57n {VDD} 58n 0 130n 0 131n {VDD} 147n {VDD} 148n 0)
+.save v(xbit.bit) v(xbit.bit_n) v(bl) v(blb) v(wl) i(Vdd)
+.tran 0.1n 190n 0 0.2n
+.meas tran cell_zero find v(xbit.bit) at=45n
+.meas tran cell_one find v(xbit.bit) at=135n
+.meas tran cell_after_read0 find v(xbit.bit) at=85n
+.meas tran cell_after_read1 find v(xbit.bit) at=175n
+.meas tran cell_read0_bl find v(bl) at=78n
+.meas tran cell_read0_blb find v(blb) at=78n
+.meas tran cell_read1_bl find v(bl) at=168n
+.meas tran cell_read1_blb find v(blb) at=168n
+.control
+run
+wrdata bitcell_wave.dat v(xbit.bit) v(xbit.bit_n) v(bl) v(blb) v(wl) i(Vdd)
+quit
+.endc
+.end

@@ -1,0 +1,259 @@
+* Two 256x32 banks: selected writes and cross-bank isolation
+* Compiler schematic; not post-layout extraction.
+.include "models.spice"
+.include "SP6TSRAM256x32.spice"
+.param VDD=3.3
+.temp 25
+.options reltol=1e-3 klu
+Vdd vdd 0 DC {VDD}
+Xl clk a0 a1 a2 a3 a4 a5 a6 a7 0 vdd ql0 ql1 ql2 ql3 ql4 ql5 ql6 ql7 ql8 ql9 ql10 ql11 ql12 ql13 ql14 ql15 ql16 ql17 ql18 ql19 ql20 ql21 ql22 ql23 ql24 ql25 ql26 ql27 ql28 ql29 ql30 ql31 d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13 d14 d15 d16 d17 d18 d19 d20 d21 d22 d23 d24 d25 d26 d27 d28 d29 d30 d31 wel0 wel1 wel2 wel3 SP6TSRAM256x32
+Cql0 ql0 0 10f
+Cql1 ql1 0 10f
+Cql2 ql2 0 10f
+Cql3 ql3 0 10f
+Cql4 ql4 0 10f
+Cql5 ql5 0 10f
+Cql6 ql6 0 10f
+Cql7 ql7 0 10f
+Cql8 ql8 0 10f
+Cql9 ql9 0 10f
+Cql10 ql10 0 10f
+Cql11 ql11 0 10f
+Cql12 ql12 0 10f
+Cql13 ql13 0 10f
+Cql14 ql14 0 10f
+Cql15 ql15 0 10f
+Cql16 ql16 0 10f
+Cql17 ql17 0 10f
+Cql18 ql18 0 10f
+Cql19 ql19 0 10f
+Cql20 ql20 0 10f
+Cql21 ql21 0 10f
+Cql22 ql22 0 10f
+Cql23 ql23 0 10f
+Cql24 ql24 0 10f
+Cql25 ql25 0 10f
+Cql26 ql26 0 10f
+Cql27 ql27 0 10f
+Cql28 ql28 0 10f
+Cql29 ql29 0 10f
+Cql30 ql30 0 10f
+Cql31 ql31 0 10f
+Xh clk a0 a1 a2 a3 a4 a5 a6 a7 0 vdd qh0 qh1 qh2 qh3 qh4 qh5 qh6 qh7 qh8 qh9 qh10 qh11 qh12 qh13 qh14 qh15 qh16 qh17 qh18 qh19 qh20 qh21 qh22 qh23 qh24 qh25 qh26 qh27 qh28 qh29 qh30 qh31 d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13 d14 d15 d16 d17 d18 d19 d20 d21 d22 d23 d24 d25 d26 d27 d28 d29 d30 d31 weh0 weh1 weh2 weh3 SP6TSRAM256x32
+Cqh0 qh0 0 10f
+Cqh1 qh1 0 10f
+Cqh2 qh2 0 10f
+Cqh3 qh3 0 10f
+Cqh4 qh4 0 10f
+Cqh5 qh5 0 10f
+Cqh6 qh6 0 10f
+Cqh7 qh7 0 10f
+Cqh8 qh8 0 10f
+Cqh9 qh9 0 10f
+Cqh10 qh10 0 10f
+Cqh11 qh11 0 10f
+Cqh12 qh12 0 10f
+Cqh13 qh13 0 10f
+Cqh14 qh14 0 10f
+Cqh15 qh15 0 10f
+Cqh16 qh16 0 10f
+Cqh17 qh17 0 10f
+Cqh18 qh18 0 10f
+Cqh19 qh19 0 10f
+Cqh20 qh20 0 10f
+Cqh21 qh21 0 10f
+Cqh22 qh22 0 10f
+Cqh23 qh23 0 10f
+Cqh24 qh24 0 10f
+Cqh25 qh25 0 10f
+Cqh26 qh26 0 10f
+Cqh27 qh27 0 10f
+Cqh28 qh28 0 10f
+Cqh29 qh29 0 10f
+Cqh30 qh30 0 10f
+Cqh31 qh31 0 10f
+Va0 a0 0 PWL(0n {VDD})
+Va1 a1 0 PWL(0n {VDD})
+Va2 a2 0 PWL(0n 0)
+Va3 a3 0 PWL(0n 0)
+Va4 a4 0 PWL(0n 0)
+Va5 a5 0 PWL(0n 0)
+Va6 a6 0 PWL(0n 0)
+Va7 a7 0 PWL(0n 0)
+Vwel0 wel0 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vwel1 wel1 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0)
+Vwel2 wel2 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vwel3 wel3 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0)
+Vweh0 weh0 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0)
+Vweh1 weh1 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0)
+Vweh2 weh2 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0)
+Vweh3 weh3 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0)
+Vd0 d0 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0)
+Vd1 d1 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0)
+Vd2 d2 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0)
+Vd3 d3 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vd4 d4 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vd5 d5 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vd6 d6 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vd7 d7 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0)
+Vd8 d8 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0)
+Vd9 d9 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vd10 d10 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vd11 d11 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0)
+Vd12 d12 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vd13 d13 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0)
+Vd14 d14 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vd15 d15 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0)
+Vd16 d16 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0)
+Vd17 d17 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0)
+Vd18 d18 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vd19 d19 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0)
+Vd20 d20 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vd21 d21 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vd22 d22 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0)
+Vd23 d23 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0)
+Vd24 d24 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0)
+Vd25 d25 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vd26 d26 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0)
+Vd27 d27 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0)
+Vd28 d28 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0 849n 0 850n {VDD} 1049n {VDD} 1050n 0)
+Vd29 d29 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0)
+Vd30 d30 0 PWL(0n 0 449n 0 450n {VDD} 649n {VDD} 650n 0)
+Vd31 d31 0 PWL(0n 0 249n 0 250n {VDD} 449n {VDD} 450n 0)
+Vclk clk 0 PWL(0n 0 100n 0 101n {VDD} 190n {VDD} 191n 0 300n 0 301n {VDD} 390n {VDD} 391n 0 500n 0 501n {VDD} 590n {VDD} 591n 0 700n 0 701n {VDD} 790n {VDD} 791n 0 900n 0 901n {VDD} 990n {VDD} 991n 0 1100n 0 1101n {VDD} 1190n {VDD} 1191n 0)
+.save v(ql0) v(ql1) v(ql2) v(ql3) v(ql4) v(ql5) v(ql6) v(ql7) v(ql8) v(ql9) v(ql10) v(ql11) v(ql12) v(ql13) v(ql14) v(ql15) v(ql16) v(ql17) v(ql18) v(ql19) v(ql20) v(ql21) v(ql22) v(ql23) v(ql24) v(ql25) v(ql26) v(ql27) v(ql28) v(ql29) v(ql30) v(ql31) v(qh0) v(qh1) v(qh2) v(qh3) v(qh4) v(qh5) v(qh6) v(qh7) v(qh8) v(qh9) v(qh10) v(qh11) v(qh12) v(qh13) v(qh14) v(qh15) v(qh16) v(qh17) v(qh18) v(qh19) v(qh20) v(qh21) v(qh22) v(qh23) v(qh24) v(qh25) v(qh26) v(qh27) v(qh28) v(qh29) v(qh30) v(qh31) v(clk) i(Vdd)
+.tran 0.5n 1250n 0 1n
+.meas tran ql0_s0 find v(ql0) at=780n
+.meas tran ql1_s0 find v(ql1) at=780n
+.meas tran ql2_s0 find v(ql2) at=780n
+.meas tran ql3_s0 find v(ql3) at=780n
+.meas tran ql4_s0 find v(ql4) at=780n
+.meas tran ql5_s0 find v(ql5) at=780n
+.meas tran ql6_s0 find v(ql6) at=780n
+.meas tran ql7_s0 find v(ql7) at=780n
+.meas tran ql8_s0 find v(ql8) at=780n
+.meas tran ql9_s0 find v(ql9) at=780n
+.meas tran ql10_s0 find v(ql10) at=780n
+.meas tran ql11_s0 find v(ql11) at=780n
+.meas tran ql12_s0 find v(ql12) at=780n
+.meas tran ql13_s0 find v(ql13) at=780n
+.meas tran ql14_s0 find v(ql14) at=780n
+.meas tran ql15_s0 find v(ql15) at=780n
+.meas tran ql16_s0 find v(ql16) at=780n
+.meas tran ql17_s0 find v(ql17) at=780n
+.meas tran ql18_s0 find v(ql18) at=780n
+.meas tran ql19_s0 find v(ql19) at=780n
+.meas tran ql20_s0 find v(ql20) at=780n
+.meas tran ql21_s0 find v(ql21) at=780n
+.meas tran ql22_s0 find v(ql22) at=780n
+.meas tran ql23_s0 find v(ql23) at=780n
+.meas tran ql24_s0 find v(ql24) at=780n
+.meas tran ql25_s0 find v(ql25) at=780n
+.meas tran ql26_s0 find v(ql26) at=780n
+.meas tran ql27_s0 find v(ql27) at=780n
+.meas tran ql28_s0 find v(ql28) at=780n
+.meas tran ql29_s0 find v(ql29) at=780n
+.meas tran ql30_s0 find v(ql30) at=780n
+.meas tran ql31_s0 find v(ql31) at=780n
+.meas tran qh0_s0 find v(qh0) at=780n
+.meas tran qh1_s0 find v(qh1) at=780n
+.meas tran qh2_s0 find v(qh2) at=780n
+.meas tran qh3_s0 find v(qh3) at=780n
+.meas tran qh4_s0 find v(qh4) at=780n
+.meas tran qh5_s0 find v(qh5) at=780n
+.meas tran qh6_s0 find v(qh6) at=780n
+.meas tran qh7_s0 find v(qh7) at=780n
+.meas tran qh8_s0 find v(qh8) at=780n
+.meas tran qh9_s0 find v(qh9) at=780n
+.meas tran qh10_s0 find v(qh10) at=780n
+.meas tran qh11_s0 find v(qh11) at=780n
+.meas tran qh12_s0 find v(qh12) at=780n
+.meas tran qh13_s0 find v(qh13) at=780n
+.meas tran qh14_s0 find v(qh14) at=780n
+.meas tran qh15_s0 find v(qh15) at=780n
+.meas tran qh16_s0 find v(qh16) at=780n
+.meas tran qh17_s0 find v(qh17) at=780n
+.meas tran qh18_s0 find v(qh18) at=780n
+.meas tran qh19_s0 find v(qh19) at=780n
+.meas tran qh20_s0 find v(qh20) at=780n
+.meas tran qh21_s0 find v(qh21) at=780n
+.meas tran qh22_s0 find v(qh22) at=780n
+.meas tran qh23_s0 find v(qh23) at=780n
+.meas tran qh24_s0 find v(qh24) at=780n
+.meas tran qh25_s0 find v(qh25) at=780n
+.meas tran qh26_s0 find v(qh26) at=780n
+.meas tran qh27_s0 find v(qh27) at=780n
+.meas tran qh28_s0 find v(qh28) at=780n
+.meas tran qh29_s0 find v(qh29) at=780n
+.meas tran qh30_s0 find v(qh30) at=780n
+.meas tran qh31_s0 find v(qh31) at=780n
+.meas tran ql0_s1 find v(ql0) at=1180n
+.meas tran ql1_s1 find v(ql1) at=1180n
+.meas tran ql2_s1 find v(ql2) at=1180n
+.meas tran ql3_s1 find v(ql3) at=1180n
+.meas tran ql4_s1 find v(ql4) at=1180n
+.meas tran ql5_s1 find v(ql5) at=1180n
+.meas tran ql6_s1 find v(ql6) at=1180n
+.meas tran ql7_s1 find v(ql7) at=1180n
+.meas tran ql8_s1 find v(ql8) at=1180n
+.meas tran ql9_s1 find v(ql9) at=1180n
+.meas tran ql10_s1 find v(ql10) at=1180n
+.meas tran ql11_s1 find v(ql11) at=1180n
+.meas tran ql12_s1 find v(ql12) at=1180n
+.meas tran ql13_s1 find v(ql13) at=1180n
+.meas tran ql14_s1 find v(ql14) at=1180n
+.meas tran ql15_s1 find v(ql15) at=1180n
+.meas tran ql16_s1 find v(ql16) at=1180n
+.meas tran ql17_s1 find v(ql17) at=1180n
+.meas tran ql18_s1 find v(ql18) at=1180n
+.meas tran ql19_s1 find v(ql19) at=1180n
+.meas tran ql20_s1 find v(ql20) at=1180n
+.meas tran ql21_s1 find v(ql21) at=1180n
+.meas tran ql22_s1 find v(ql22) at=1180n
+.meas tran ql23_s1 find v(ql23) at=1180n
+.meas tran ql24_s1 find v(ql24) at=1180n
+.meas tran ql25_s1 find v(ql25) at=1180n
+.meas tran ql26_s1 find v(ql26) at=1180n
+.meas tran ql27_s1 find v(ql27) at=1180n
+.meas tran ql28_s1 find v(ql28) at=1180n
+.meas tran ql29_s1 find v(ql29) at=1180n
+.meas tran ql30_s1 find v(ql30) at=1180n
+.meas tran ql31_s1 find v(ql31) at=1180n
+.meas tran qh0_s1 find v(qh0) at=1180n
+.meas tran qh1_s1 find v(qh1) at=1180n
+.meas tran qh2_s1 find v(qh2) at=1180n
+.meas tran qh3_s1 find v(qh3) at=1180n
+.meas tran qh4_s1 find v(qh4) at=1180n
+.meas tran qh5_s1 find v(qh5) at=1180n
+.meas tran qh6_s1 find v(qh6) at=1180n
+.meas tran qh7_s1 find v(qh7) at=1180n
+.meas tran qh8_s1 find v(qh8) at=1180n
+.meas tran qh9_s1 find v(qh9) at=1180n
+.meas tran qh10_s1 find v(qh10) at=1180n
+.meas tran qh11_s1 find v(qh11) at=1180n
+.meas tran qh12_s1 find v(qh12) at=1180n
+.meas tran qh13_s1 find v(qh13) at=1180n
+.meas tran qh14_s1 find v(qh14) at=1180n
+.meas tran qh15_s1 find v(qh15) at=1180n
+.meas tran qh16_s1 find v(qh16) at=1180n
+.meas tran qh17_s1 find v(qh17) at=1180n
+.meas tran qh18_s1 find v(qh18) at=1180n
+.meas tran qh19_s1 find v(qh19) at=1180n
+.meas tran qh20_s1 find v(qh20) at=1180n
+.meas tran qh21_s1 find v(qh21) at=1180n
+.meas tran qh22_s1 find v(qh22) at=1180n
+.meas tran qh23_s1 find v(qh23) at=1180n
+.meas tran qh24_s1 find v(qh24) at=1180n
+.meas tran qh25_s1 find v(qh25) at=1180n
+.meas tran qh26_s1 find v(qh26) at=1180n
+.meas tran qh27_s1 find v(qh27) at=1180n
+.meas tran qh28_s1 find v(qh28) at=1180n
+.meas tran qh29_s1 find v(qh29) at=1180n
+.meas tran qh30_s1 find v(qh30) at=1180n
+.meas tran qh31_s1 find v(qh31) at=1180n
+.control
+run
+wrdata dual_wave.dat v(ql0) v(ql1) v(ql2) v(ql3) v(ql4) v(ql5) v(ql6) v(ql7) v(ql8) v(ql9) v(ql10) v(ql11) v(ql12) v(ql13) v(ql14) v(ql15) v(ql16) v(ql17) v(ql18) v(ql19) v(ql20) v(ql21) v(ql22) v(ql23) v(ql24) v(ql25) v(ql26) v(ql27) v(ql28) v(ql29) v(ql30) v(ql31) v(qh0) v(qh1) v(qh2) v(qh3) v(qh4) v(qh5) v(qh6) v(qh7) v(qh8) v(qh9) v(qh10) v(qh11) v(qh12) v(qh13) v(qh14) v(qh15) v(qh16) v(qh17) v(qh18) v(qh19) v(qh20) v(qh21) v(qh22) v(qh23) v(qh24) v(qh25) v(qh26) v(qh27) v(qh28) v(qh29) v(qh30) v(qh31) v(clk) i(Vdd)
+quit
+.endc
+.end

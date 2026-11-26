@@ -1,0 +1,190 @@
+* Single 256x32 bank: initialized data with stopped-clock holds
+* Compiler schematic; not post-layout extraction.
+.include "models.spice"
+.include "SP6TSRAM256x32.spice"
+.param VDD=3.3
+.temp 25
+.options reltol=1e-3 klu
+Vdd vdd 0 DC {VDD}
+Xmem clk a0 a1 a2 a3 a4 a5 a6 a7 0 vdd q0 q1 q2 q3 q4 q5 q6 q7 q8 q9 q10 q11 q12 q13 q14 q15 q16 q17 q18 q19 q20 q21 q22 q23 q24 q25 q26 q27 q28 q29 q30 q31 d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13 d14 d15 d16 d17 d18 d19 d20 d21 d22 d23 d24 d25 d26 d27 d28 d29 d30 d31 we0 we1 we2 we3 SP6TSRAM256x32
+Cq0 q0 0 10f
+Cq1 q1 0 10f
+Cq2 q2 0 10f
+Cq3 q3 0 10f
+Cq4 q4 0 10f
+Cq5 q5 0 10f
+Cq6 q6 0 10f
+Cq7 q7 0 10f
+Cq8 q8 0 10f
+Cq9 q9 0 10f
+Cq10 q10 0 10f
+Cq11 q11 0 10f
+Cq12 q12 0 10f
+Cq13 q13 0 10f
+Cq14 q14 0 10f
+Cq15 q15 0 10f
+Cq16 q16 0 10f
+Cq17 q17 0 10f
+Cq18 q18 0 10f
+Cq19 q19 0 10f
+Cq20 q20 0 10f
+Cq21 q21 0 10f
+Cq22 q22 0 10f
+Cq23 q23 0 10f
+Cq24 q24 0 10f
+Cq25 q25 0 10f
+Cq26 q26 0 10f
+Cq27 q27 0 10f
+Cq28 q28 0 10f
+Cq29 q29 0 10f
+Cq30 q30 0 10f
+Cq31 q31 0 10f
+Va0 a0 0 PWL(0n {VDD} 249n {VDD} 250n 0 2049n 0 2050n {VDD})
+Va1 a1 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Va2 a2 0 PWL(0n 0)
+Va3 a3 0 PWL(0n 0)
+Va4 a4 0 PWL(0n {VDD})
+Va5 a5 0 PWL(0n 0)
+Va6 a6 0 PWL(0n 0)
+Va7 a7 0 PWL(0n 0)
+Vwe0 we0 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vwe1 we1 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vwe2 we2 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vwe3 we3 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd0 d0 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd1 d1 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd2 d2 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd3 d3 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd4 d4 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd5 d5 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd6 d6 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd7 d7 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd8 d8 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd9 d9 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd10 d10 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd11 d11 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd12 d12 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd13 d13 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd14 d14 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd15 d15 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd16 d16 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd17 d17 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd18 d18 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd19 d19 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd20 d20 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd21 d21 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd22 d22 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd23 d23 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd24 d24 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd25 d25 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd26 d26 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd27 d27 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd28 d28 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd29 d29 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vd30 d30 0 PWL(0n 0 2249n 0 2250n {VDD} 2449n {VDD} 2450n 0)
+Vd31 d31 0 PWL(0n 0 249n 0 250n {VDD} 2049n {VDD} 2050n 0)
+Vclk clk 0 PWL(0n 0 100n 0 101n {VDD} 190n {VDD} 191n 0 300n 0 301n {VDD} 390n {VDD} 391n 0 2100n 0 2101n {VDD} 2190n {VDD} 2191n 0 2300n 0 2301n {VDD} 2390n {VDD} 2391n 0 2500n 0 2501n {VDD} 2590n {VDD} 2591n 0 4100n 0 4101n {VDD} 4190n {VDD} 4191n 0)
+.save v(q0) v(q1) v(q2) v(q3) v(q4) v(q5) v(q6) v(q7) v(q8) v(q9) v(q10) v(q11) v(q12) v(q13) v(q14) v(q15) v(q16) v(q17) v(q18) v(q19) v(q20) v(q21) v(q22) v(q23) v(q24) v(q25) v(q26) v(q27) v(q28) v(q29) v(q30) v(q31) v(clk) i(Vdd)
+.tran 0.5n 4250n 0 1n
+.meas tran q0_s0 find v(q0) at=2180n
+.meas tran q1_s0 find v(q1) at=2180n
+.meas tran q2_s0 find v(q2) at=2180n
+.meas tran q3_s0 find v(q3) at=2180n
+.meas tran q4_s0 find v(q4) at=2180n
+.meas tran q5_s0 find v(q5) at=2180n
+.meas tran q6_s0 find v(q6) at=2180n
+.meas tran q7_s0 find v(q7) at=2180n
+.meas tran q8_s0 find v(q8) at=2180n
+.meas tran q9_s0 find v(q9) at=2180n
+.meas tran q10_s0 find v(q10) at=2180n
+.meas tran q11_s0 find v(q11) at=2180n
+.meas tran q12_s0 find v(q12) at=2180n
+.meas tran q13_s0 find v(q13) at=2180n
+.meas tran q14_s0 find v(q14) at=2180n
+.meas tran q15_s0 find v(q15) at=2180n
+.meas tran q16_s0 find v(q16) at=2180n
+.meas tran q17_s0 find v(q17) at=2180n
+.meas tran q18_s0 find v(q18) at=2180n
+.meas tran q19_s0 find v(q19) at=2180n
+.meas tran q20_s0 find v(q20) at=2180n
+.meas tran q21_s0 find v(q21) at=2180n
+.meas tran q22_s0 find v(q22) at=2180n
+.meas tran q23_s0 find v(q23) at=2180n
+.meas tran q24_s0 find v(q24) at=2180n
+.meas tran q25_s0 find v(q25) at=2180n
+.meas tran q26_s0 find v(q26) at=2180n
+.meas tran q27_s0 find v(q27) at=2180n
+.meas tran q28_s0 find v(q28) at=2180n
+.meas tran q29_s0 find v(q29) at=2180n
+.meas tran q30_s0 find v(q30) at=2180n
+.meas tran q31_s0 find v(q31) at=2180n
+.meas tran q0_s1 find v(q0) at=2580n
+.meas tran q1_s1 find v(q1) at=2580n
+.meas tran q2_s1 find v(q2) at=2580n
+.meas tran q3_s1 find v(q3) at=2580n
+.meas tran q4_s1 find v(q4) at=2580n
+.meas tran q5_s1 find v(q5) at=2580n
+.meas tran q6_s1 find v(q6) at=2580n
+.meas tran q7_s1 find v(q7) at=2580n
+.meas tran q8_s1 find v(q8) at=2580n
+.meas tran q9_s1 find v(q9) at=2580n
+.meas tran q10_s1 find v(q10) at=2580n
+.meas tran q11_s1 find v(q11) at=2580n
+.meas tran q12_s1 find v(q12) at=2580n
+.meas tran q13_s1 find v(q13) at=2580n
+.meas tran q14_s1 find v(q14) at=2580n
+.meas tran q15_s1 find v(q15) at=2580n
+.meas tran q16_s1 find v(q16) at=2580n
+.meas tran q17_s1 find v(q17) at=2580n
+.meas tran q18_s1 find v(q18) at=2580n
+.meas tran q19_s1 find v(q19) at=2580n
+.meas tran q20_s1 find v(q20) at=2580n
+.meas tran q21_s1 find v(q21) at=2580n
+.meas tran q22_s1 find v(q22) at=2580n
+.meas tran q23_s1 find v(q23) at=2580n
+.meas tran q24_s1 find v(q24) at=2580n
+.meas tran q25_s1 find v(q25) at=2580n
+.meas tran q26_s1 find v(q26) at=2580n
+.meas tran q27_s1 find v(q27) at=2580n
+.meas tran q28_s1 find v(q28) at=2580n
+.meas tran q29_s1 find v(q29) at=2580n
+.meas tran q30_s1 find v(q30) at=2580n
+.meas tran q31_s1 find v(q31) at=2580n
+.meas tran q0_s2 find v(q0) at=4180n
+.meas tran q1_s2 find v(q1) at=4180n
+.meas tran q2_s2 find v(q2) at=4180n
+.meas tran q3_s2 find v(q3) at=4180n
+.meas tran q4_s2 find v(q4) at=4180n
+.meas tran q5_s2 find v(q5) at=4180n
+.meas tran q6_s2 find v(q6) at=4180n
+.meas tran q7_s2 find v(q7) at=4180n
+.meas tran q8_s2 find v(q8) at=4180n
+.meas tran q9_s2 find v(q9) at=4180n
+.meas tran q10_s2 find v(q10) at=4180n
+.meas tran q11_s2 find v(q11) at=4180n
+.meas tran q12_s2 find v(q12) at=4180n
+.meas tran q13_s2 find v(q13) at=4180n
+.meas tran q14_s2 find v(q14) at=4180n
+.meas tran q15_s2 find v(q15) at=4180n
+.meas tran q16_s2 find v(q16) at=4180n
+.meas tran q17_s2 find v(q17) at=4180n
+.meas tran q18_s2 find v(q18) at=4180n
+.meas tran q19_s2 find v(q19) at=4180n
+.meas tran q20_s2 find v(q20) at=4180n
+.meas tran q21_s2 find v(q21) at=4180n
+.meas tran q22_s2 find v(q22) at=4180n
+.meas tran q23_s2 find v(q23) at=4180n
+.meas tran q24_s2 find v(q24) at=4180n
+.meas tran q25_s2 find v(q25) at=4180n
+.meas tran q26_s2 find v(q26) at=4180n
+.meas tran q27_s2 find v(q27) at=4180n
+.meas tran q28_s2 find v(q28) at=4180n
+.meas tran q29_s2 find v(q29) at=4180n
+.meas tran q30_s2 find v(q30) at=4180n
+.meas tran q31_s2 find v(q31) at=4180n
+.control
+run
+wrdata bank_wave.dat v(q0) v(q1) v(q2) v(q3) v(q4) v(q5) v(q6) v(q7) v(q8) v(q9) v(q10) v(q11) v(q12) v(q13) v(q14) v(q15) v(q16) v(q17) v(q18) v(q19) v(q20) v(q21) v(q22) v(q23) v(q24) v(q25) v(q26) v(q27) v(q28) v(q29) v(q30) v(q31) v(clk) i(Vdd)
+quit
+.endc
+.end

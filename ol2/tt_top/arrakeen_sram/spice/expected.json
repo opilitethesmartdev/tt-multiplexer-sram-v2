@@ -1,0 +1,72 @@
+{
+  "bank_functional": [
+    {
+      "sample": "s0",
+      "time_ns": 980,
+      "expected": "aa34aa78"
+    },
+    {
+      "sample": "s1",
+      "time_ns": 1180,
+      "expected": "55aa55aa"
+    },
+    {
+      "sample": "s2",
+      "time_ns": 1380,
+      "expected": "aa34aa78"
+    }
+  ],
+  "bank_retention": [
+    {
+      "sample": "s0",
+      "time_ns": 2180,
+      "expected": "aa55aa55"
+    },
+    {
+      "sample": "s1",
+      "time_ns": 2580,
+      "expected": "55aa55aa"
+    },
+    {
+      "sample": "s2",
+      "time_ns": 4180,
+      "expected": "55aa55aa"
+    }
+  ],
+  "bank_address_pipeline": [
+    {
+      "sample": "s0",
+      "time_ns": 980,
+      "expected": "aa55aa55"
+    },
+    {
+      "sample": "s1",
+      "time_ns": 1180,
+      "expected": "aa55aa55"
+    },
+    {
+      "sample": "s2",
+      "time_ns": 1380,
+      "expected": "55aa55aa"
+    },
+    {
+      "sample": "s3",
+      "time_ns": 1580,
+      "expected": "55aa55aa"
+    }
+  ],
+  "dual_bank_isolation": [
+    {
+      "sample": "s0",
+      "time_ns": 780,
+      "low": "aa55aa55",
+      "high": "55aa55aa"
+    },
+    {
+      "sample": "s1",
+      "time_ns": 1180,
+      "low": "aa34aa78",
+      "high": "55aa55aa"
+    }
+  ]
+}
