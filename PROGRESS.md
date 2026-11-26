@@ -22,6 +22,9 @@ not a claim that `main` is safe for tapeout.
 > an immediately adjacent free well-tap site in that replay. A complete
 > candidate CI rebuild is running as `45876531269`, on shuttle `0159531`
 > with mux `211d8bb`. Independent GDS verification remains required.
+> Reusable local GDS checks found the prior failed candidate `45846356720`
+> still has the power-gate control-to-supply bridge, but no q[22]-to-nearby
+> ground path within the tested window. This is not full LVS.
 
 > **Final-SPICE power-port issue:** in run `45835066447`, the custom LVS
 > repair renamed cell-body power/ground nets to `vdpwr`/`vgnd` while the

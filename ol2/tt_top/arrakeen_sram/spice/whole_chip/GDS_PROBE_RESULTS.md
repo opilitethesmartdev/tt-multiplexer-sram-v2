@@ -23,6 +23,30 @@ The second command is expected to fail on the baseline. The replay skips
 module power straps, signal routing and streamout; it cannot establish
 final GDS correctness, well-tap coverage, supply integrity, or sign-off.
 
+Two additional KLayout Python checks can be run on any candidate GDS:
+
+```sh
+python3 test_check_gate_gds.py
+python3 check_gate_gds.py /path/to/tt_gf_wrapper.gds
+python3 check_sram_q22_gds.py /path/to/tt_gf_wrapper.gds
+```
+
+The gate check detects direct shared root-Metal4 paths between each
+power-gate control and its supply labels. The SRAM check searches a 40 µm
+window for a q[22]-to-nearby-cell-VSS path. Neither finds all possible
+shorts or proves the chip clean. Both reject the original baseline GDS.
+On the **prior, failed** candidate run `45846356720`, GDS SHA-256
+`7aa0bb1983bdc7764daec5faee7eaadc5aaf20f9fe470ce4f360b0606d9230a1`,
+the gate check still finds the same branch-14 `ctrl`–`VPWR` bridge; the
+localized q[22] check finds no such nearby-ground path. This is not a
+complete SRAM or power-connectivity pass. That run's 30 route DRC markers
+include SRAM Metal2 spacing and signal-to-power/obstruction shorts on
+Metal4/Metal5; its LVS also failed with 14 errors. Original reports are
+`artifacts/candidate_45846356720_route.drc.gz` and
+`artifacts/candidate_45846356720_lvs.netgen.{rpt,json}.gz`. The LVS
+report is from the prior flow's **repaired** abstract extraction, not
+independent physical LVS.
+
 ## Inputs and extraction
 
 - Chip: CI run `45835066447`, mux commit `2914d8a`, not the newer candidate.
