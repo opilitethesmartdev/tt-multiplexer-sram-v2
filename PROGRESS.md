@@ -5,7 +5,7 @@ The SPICE testbenches, results and recorded evidence are in
 The status below describes the `silicon-safety-validation` branch; it is
 not a claim that `main` is safe for tapeout.
 
-> **Power-routing fix candidate:** SRAM macro placement now reserves a 1 µm
+> **Power-routing fix candidate:** hard-macro placement now reserves a 1 µm
 > halo; standard-cell power stacks and risers are checked against complete
 > macro bounds with enclosure and clearance, and skipped rails fail the
 > flow. Isolated Metal5 power stripes can be bridged through a checked,
@@ -20,8 +20,15 @@ not a claim that `main` is safe for tapeout.
 > This **partial replay excludes** module straps, signal routing, final GDS,
 > DRC and LVS. It is not a verified fix or sign-off; 12 logic cells lacked
 > an immediately adjacent free well-tap site in that replay. A complete
-> candidate CI rebuild is running as `45876531269`, on shuttle `0159531`
-> with mux `211d8bb`. Independent GDS verification remains required.
+> candidate CI rebuild `45876531269`, on shuttle `0159531` with mux
+> `211d8bb`, failed in `CustomRoute` after 7 minutes because three rails
+> near other hard macros lacked safe power paths. The follow-up extends the
+> halo from SRAM to all hard macros. Re-legalizing that CI's saved ODB with
+> OpenROAD 26Q4 then yielded 337/337 risers, 1,327 via boxes clear of
+> macros, four gate controls clear of foreign special wires, and four
+> isolated-stripe bridges; 13 logic cells lacked a free abutting tap site.
+> This follow-up is still only a partial replay; independent final-GDS
+> verification remains required.
 > Reusable local GDS checks found the prior failed candidate `45846356720`
 > still has the power-gate control-to-supply bridge, but no q[22]-to-nearby
 > ground path within the tested window. This is not full LVS.

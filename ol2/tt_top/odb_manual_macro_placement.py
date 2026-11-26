@@ -44,15 +44,18 @@ def gridify(value, grid):
     return round(value / grid) * grid
 
 
-def reserve_sram_power_clearance(block, inst):
-    """Keep stdcell rows away from the SRAM edge before placement.
+def reserve_macro_power_clearance(block, inst):
+    """Keep stdcell rows away from hard-macro edges before placement.
 
     A stdcell supply rail at the exact SRAM boundary previously placed a
     stacked ground via over an SRAM Metal3 signal. The 1 µm placement halo
     provides space for the complete via/riser enclosure and the conservative
-    0.3 µm macro clearance checked later. This is not a foundry DRC check.
+    0.3 µm macro clearance checked later. The same issue can occur at
+    other macro edges, so this covers every placed hard macro.
+    This is not a foundry DRC check.
     """
-    if inst.getMaster().getName() != "SP6TSRAM256x32":
+    if inst.getMaster().getName().startswith(
+            ("gf180mcu_fd_sc_", "sky130_fd_sc_", "sg13g2_")):
         return 0
     halo = block.getDbUnitsPerMicron()
     bb = inst.getBBox()
@@ -60,7 +63,7 @@ def reserve_sram_power_clearance(block, inst):
         (bb.xMin(), bb.yMin(), bb.xMax(), bb.yMax()), halo)
     for coords in strips:
         if odb.dbBlockage.create(block, *coords) is None:
-            raise RuntimeError("failed to create SRAM placement clearance")
+            raise RuntimeError("failed to create macro placement clearance")
     return len(strips)
 
 
@@ -113,7 +116,6 @@ def manual_macro_placement(reader, config, fixed):
         inst.setOrient(lef_rot_to_oa_rot(orientation))
         inst.setLocation(gridify(x, 5), gridify(y, 5))
         inst.setPlacementStatus("FIRM" if fixed else "PLACED")
-        clearance_strips += reserve_sram_power_clearance(reader.block, inst)
         placed += 1
 
     missing = sorted(item[0] for item in macros.values())
@@ -125,8 +127,12 @@ def manual_macro_placement(reader, config, fixed):
         for name in missing:
             print(f"* {name}", file=sys.stderr)
 
+    for inst in reader.block.getInsts():
+        if inst.getPlacementStatus() in ("PLACED", "FIRM", "FIXED", "LOCKED"):
+            clearance_strips += reserve_macro_power_clearance(reader.block, inst)
+
     print(f"Successfully placed {placed} macro instances; skipped {len(missing)} absent instances.")
-    print(f"Created {clearance_strips} SRAM placement-clearance strips.")
+    print(f"Created {clearance_strips} hard-macro placement-clearance strips.")
 
 
 cli.add_command(manual_macro_placement)

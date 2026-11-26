@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Partial local OpenROAD replay for SRAM placement and power-routing fixes.
+"""Partial local OpenROAD replay for macro placement and power-routing fixes.
 
-This accepts the baseline's post-detailed-placement ODB, adds the same SRAM
+This accepts a post-detailed-placement ODB, adds the same hard-macro
 placement halos, re-legalizes cells, and runs WellTaps, StdCellPower, and
 MacroPowerVias. It deliberately does not run ModulePowerStrapper, global or
 detailed signal routing, GDS streamout, DRC, LVS, or SPICE. Success is not
@@ -114,7 +114,10 @@ def main():
     if len(srams) != 2:
         raise ValueError(f"expected two SRAMs, found {len(srams)}")
     halo = reader.block.getDbUnitsPerMicron()
-    for inst in srams:
+    macros = [inst for inst in reader.block.getInsts()
+              if not inst.getMaster().getName().startswith(route.STDCELL_PREFIXES)]
+    print(f"Adding clearance around {len(macros)} hard macros.")
+    for inst in macros:
         for rect in placement_halo_strips(box(inst.getBBox()), halo):
             if odb.dbBlockage.create(reader.block, *rect) is None:
                 raise RuntimeError("cannot create placement halo")

@@ -12,6 +12,13 @@ power routing on the old pre-route ODB passed targeted checks, while the
 original post-route ODB fails its gate-control check. The successful replay
 log is `artifacts/power_routing_partial_odb_replay.log.gz`.
 
+The first new CI run (`45876531269`) failed safely in custom routing with
+three unpowered rails near non-SRAM macro boundaries. The follow-up extends
+the placement halo to all hard macros; a partial replay on that run's own
+post-placement ODB succeeds with all 337 risers and the targeted checks,
+but does not run module straps, detailed routing, or streamout. Its log is
+`artifacts/power_routing_candidate_allmacro_replay.log.gz`.
+
 With an OpenROAD Python wheel, reproduce from `ol2/tt_top`:
 
 ```sh
