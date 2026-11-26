@@ -17,6 +17,11 @@ not a claim that `main` is safe for tapeout.
 > and user macros. Device-model `.lib` sections require separate handling.
 > The locally packaged Magic 8.3.105 is too old for this PDK's tech file
 > (minimum 8.3.411) and crashed during setup; do not use it for extraction.
+> A separate no-GUI Magic 8.3.677 build (matching the CI version) has been
+> compiled. An SRAM raw-GDS extraction pilot completed with 4,767 warnings
+> and a different 80-pin interface including `vdd_uq5` (the compiler view
+> has 79 pins); its SPICE is preserved in `spice/whole_chip/artifacts/`.
+> A raw extraction of the full run-`45835066447` GDS is now in progress.
 
 > **Whole-chip SPICE preflight:** the raw top-level SPICE from run
 > `45835066447` was created by Magic from OpenROAD DEF/LEF

@@ -32,6 +32,17 @@ all ten `tt_mux` instances, the controller, power gates, user tiles and
 standard-cell instances. Feeding that file alone to ngspice does not simulate
 the actual chip.
 
+The separate raw-GDS extraction pilot on the SRAM macro used Magic 8.3.677
+and the CI-pinned GF180 PDK. It generated a device-containing hierarchical
+SPICE file but reported **4,767 extraction warnings**. Its top subcircuit
+has 80 ports, including an extra `vdd_uq5`, while the compiler schematic
+has 79 in a different order. These observations require port, supply and
+extraction validation; tying the extra port by guess would undermine the
+test. The pilot is not full-chip extraction or LVS. Its unmodified SPICE is
+in `artifacts/raw_sram_macro_from_gds.spice.gz`; SHA-256 of the uncompressed
+file is `7c2a7942631ba972f3c99627cd20ff11494696c02dafa0533a23bad66a05b14e`.
+A raw extraction of the complete run-`45835066447` GDS is in progress.
+
 The `final/spice/tt_gf_wrapper.spice` for this run has 88 top-level ports,
 but the custom LVS repair replaced cell-body nodes `vccd2`/`vssd2` with
 internal nodes `vdpwr`/`vgnd`. None of its `vccd*`, `vssd*`, or `vssa*`
@@ -76,9 +87,14 @@ python3 audit_spice.py artifacts/repaired_tt_gf_wrapper.spice.gz \
   --library artifacts/tt_ctrl.spice.gz \
   --library ../SP6TSRAM256x32.spice \
   --library "$PDK_ROOT/gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu7t5v0/spice/gf180mcu_fd_sc_mcu7t5v0.spice"
+python3 audit_spice.py artifacts/raw_tt_gf_wrapper.spice.gz \
+  --library artifacts/tt_mux.spice.gz \
+  --library artifacts/tt_ctrl.spice.gz \
+  --library artifacts/raw_sram_macro_from_gds.spice.gz \
+  --library "$PDK_ROOT/gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu7t5v0/spice/gf180mcu_fd_sc_mcu7t5v0.spice"
 ```
 
-All three audits intentionally return failure. The second adds the real
+All four audits intentionally return failure. The second adds the real
 macro-level mux/controller extractions and compiler SRAM schematic but
 still reports missing/empty physical masters, the SRAM port-order mismatch,
 and the extracted `q[22]` association. Empty decorative/filler cells may be
@@ -95,6 +111,8 @@ missing because it does not resolve PDK `.lib` corner sections; those
 device subcircuits must be loaded separately from the PDK models for an
 actual simulator run. Do not read the audit as a claim that these PDK
 device models do not exist.
+The fourth uses the SRAM GDS pilot; it reports that both top-level SRAM
+instances provide 79 terminals but the extracted GDS subcircuit has 80.
 
 No `runs/wokwi/final/spice/` file was found in this workspace; the above
 uses the actual `final/spice` artifact from the identified CI run. Audit a

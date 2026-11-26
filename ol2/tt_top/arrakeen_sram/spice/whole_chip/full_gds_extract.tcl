@@ -41,6 +41,9 @@ extract no adjust
 extract warn all
 extract all
 ext2spice lvs
+ext2spice blackbox off
+ext2spice hierarchy on
+ext2spice short resistor
 ext2spice -o [file join $output "$top.raw_gds.spice"] "$top.ext"
 feedback save [file join $output "feedback.txt"]
 cd $previous
