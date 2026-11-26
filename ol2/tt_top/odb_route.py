@@ -11,6 +11,9 @@ import yaml
 from collections import namedtuple
 
 import odb
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from routing_safety import (blocked_by_macro, blocked_by_other_pin,
+	gate_escape_rects, restricted_macro_crossing, segment_rect)
 
 sys.path.append('../../py')
 import tt
@@ -742,6 +745,7 @@ class ViaGenerator:
 		# Save interesting vars
 		self.reader = reader
 		self.tech = tech = reader.db.getTech()
+		self.rule_name = via_rule_name
 
 		# Find Via Rule
 		self.via_rule = tech.findViaGenerateRule(via_rule_name)
@@ -784,9 +788,18 @@ class ViaGenerator:
 	def create(self, ncols, nrows, name=None):
 		# Create via
 		if name is None:
-			name = f'vg_{(hash(self) & 0xffffffff):08x}_{ncols:d}x{nrows:d}'
+			# Python object hashes can be reused after an earlier generator
+			# is destroyed; dbVia.create then returns None for the duplicate.
+			base = f'tt_{self.rule_name}_{ncols:d}x{nrows:d}'
+			name = base
+			index = 0
+			while self.reader.block.findVia(name) is not None:
+				index += 1
+				name = f'{base}_{index:d}'
 
 		v = odb.dbVia.create(self.reader.block, name)
+		if v is None:
+			raise RuntimeError(f'Failed to create via {name}')
 
 		# Use a generate-rule via with explicit parameters. It is written to the
 		# DEF's VIAS section as "+ VIARULE ... + CUTSIZE ... + ROWCOL ...", and
@@ -1110,6 +1123,23 @@ class MacroPowerVias:
 
 	NETS = ('vdpwr', 'vgnd', 'vapwr')
 
+	@staticmethod
+	def _rect(r):
+		return (r.xMin(), r.yMin(), r.xMax(), r.yMax())
+
+	def _safe_m4_route(self, net_name, rects, endpoint_pins=()):
+		# LEF pins are useful early obstacles, but this is not full-chip DRC:
+		# detailed routing and all GDS geometry still need independent checks.
+		if blocked_by_other_pin(rects, net_name, self.foreign_m4,
+				self.clearance):
+			return False
+		allowed = {}
+		for pin in endpoint_pins:
+			p = self._rect(pin)
+			for bb in self.pin_macros.get(p, ()):
+				allowed.setdefault(bb, []).append(p)
+		return not restricted_macro_crossing(rects, self.macro_boxes, allowed)
+
 	def __init__(self, reader):
 		self.reader = reader
 		self.tech = reader.db.getTech()
@@ -1161,7 +1191,7 @@ class MacroPowerVias:
 			self.ring_segs[name] = segs
 
 		self.reasons = {'no_stripe': 0, 'too_small': 0, 'claimed': 0,
-			'jogged': 0, 'strapped': 0}
+			'jogged': 0, 'strapped': 0, 'stripe_bridge': 0}
 
 		# Vias already on these nets: pdngen's macro arrays and ring/stripe
 		# vias, ModulePowerStrapper's gated-domain straps, StdCellPower's
@@ -1259,13 +1289,81 @@ class MacroPowerVias:
 		# the pin/stripe crossing so the pin is provably shorted to the stripe,
 		# then one Via4 through it for the Metal5 connection.
 		w = min(int(r.xMax() - r.xMin()), 1600)
+		shape = (x - w // 2, y - self.min_m4[1] // 2 - 200,
+			x + w // 2, y + self.min_m4[1] // 2 + 200)
+		m5x = (self.v45.cut_sz[0] + 2 * self.v45.top_enc[0] + 1) // 2
+		m5y = (self.v45.cut_sz[1] + 2 * self.v45.top_enc[1] + 1) // 2
+		m5via = (x - m5x, y - m5y, x + m5x, y + m5y)
+		if (not self._safe_m4_route(net.getName(), [shape], (r,)) or
+				blocked_by_other_pin([m5via], net.getName(), self.foreign_m5,
+					self.m5_clearance)):
+			raise RuntimeError('MacroPowerVias: Metal4 pin tie is too close '
+				f'to another macro pin or macro interior on {net.getName()}: '
+				f'pin={self._rect(r)}, shape={shape}')
 		sw = odb.dbSWire.create(net, "ROUTED")
 		odb.createSBoxes(sw, self.m4, [
-			odb.Rect(x - w // 2, y - self.min_m4[1] // 2 - 200,
-				x + w // 2, y + self.min_m4[1] // 2 + 200),
+			odb.Rect(*shape),
 		], "STRIPE")
 		odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, y)], "STRIPE")
+		self.foreign_m4.append((net.getName(), shape))
+		self.foreign_m5.append((net.getName(), m5via))
 		return 1
+
+	def _bridge_isolated_stripe(self, net, st, connected):
+		"""Bridge two same-net Metal5 stripes outside all hard macros.
+
+		A Metal4 riser and two Via4s avoid passing through a macro's control
+		pin. Existing foreign-net power geometry and macro boxes are checked;
+		a routing obstruction reserves the new riser for detailed routing.
+		Independent routed-GDS DRC/LVS is still required.
+		"""
+		name = net.getName()
+		m4half_x = (self.v45.cut_sz[0] + 2 * self.v45.bot_enc[0] + 1) // 2
+		m4half_y = (self.v45.cut_sz[1] + 2 * self.v45.bot_enc[1] + 1) // 2
+		m5half_x = (self.v45.cut_sz[0] + 2 * self.v45.top_enc[0] + 1) // 2
+		m5half_y = (self.v45.cut_sz[1] + 2 * self.v45.top_enc[1] + 1) // 2
+		width = max(800, 2 * m4half_x)
+		step = max(2 * self.dbu, 2 * width)
+		y0 = self._snap((st[1] + st[3]) // 2)
+		for other in sorted(connected, key=lambda s: abs((s[1] + s[3]) // 2 - y0)):
+			y1 = self._snap((other[1] + other[3]) // 2)
+			lo = max(st[0], other[0]) + m5half_x + self.clearance
+			hi = min(st[2], other[2]) - m5half_x - self.clearance
+			if lo >= hi:
+				continue
+			if (y0 - m5half_y < st[1] or y0 + m5half_y > st[3] or
+					y1 - m5half_y < other[1] or y1 + m5half_y > other[3]):
+				continue
+			for direction, initial in ((-1, hi), (1, lo)):
+				x = self._snap(initial)
+				while lo <= x <= hi:
+					path = segment_rect(x, y0, x, y1, width)
+					via4 = [(x - m4half_x, y - m4half_y,
+						x + m4half_x, y + m4half_y) for y in (y0, y1)]
+					top5 = [(x - m5half_x, y - m5half_y,
+						x + m5half_x, y + m5half_y) for y in (y0, y1)]
+					if (not blocked_by_macro(path, self.macro_boxes, self.clearance)
+							and not blocked_by_other_pin([path] + via4, name,
+								self.foreign_m4, self.clearance)
+							and not blocked_by_other_pin(top5, name,
+								self.foreign_m5, self.m5_clearance)):
+						sw = odb.dbSWire.create(net, "ROUTED")
+						odb.createSBoxes(sw, self.m4, [odb.Rect(*path)], "STRIPE")
+						odb.createSBoxes(sw, self.v45.get(1, 1),
+							[odb.Point(x, y0), odb.Point(x, y1)], "STRIPE")
+						odb.dbObstruction_create(self.reader.block, self.m4,
+							path[0] - self.clearance, path[1] - self.clearance,
+							path[2] + self.clearance, path[3] + self.clearance)
+						self.foreign_m4.append((name, path))
+						self.foreign_m4.extend((name, v) for v in via4)
+						self.foreign_m5.extend((name, v) for v in top5)
+						self.bridged_stripes.add((name, st))
+						self.reasons['stripe_bridge'] += 1
+						print(f'MacroPowerVias: bridged {name} isolated stripe '
+							f'at x={x}, y={y0}..{y1}')
+						return 1
+					x += direction * step
+		return 0
 
 	def _tie_isolated(self, net, rects):
 		"""Tie a supply stripe that pdngen left short of the core ring.
@@ -1304,6 +1402,7 @@ class MacroPowerVias:
 		# Use the leftmost column: the mux keeps its outer margin free of
 		# module signals (the fan-out from the block above uses the inner
 		# columns), so the strap does not cross a routed Metal4 signal.
+		isolated = False
 		for r in sorted(rects, key=lambda q: q.xMin()):
 			best = None
 			for st in sts:
@@ -1316,8 +1415,11 @@ class MacroPowerVias:
 			if best is None:
 				continue
 			st = best[1]
-			if self._stripe_connected(name, st):
+			if self._stripe_connected(name, st) or (name, st) in self.bridged_stripes:
 				continue
+			isolated = True
+			if self._bridge_isolated_stripe(net, st, reach):
+				return 1
 
 			x = self._snap((r.xMin() + r.xMax()) // 2)
 			cand = None
@@ -1344,16 +1446,29 @@ class MacroPowerVias:
 				ys, ye = ycs, r.yMin() + 200
 			if ye <= ys:
 				continue
+			strap = (x - w // 2, ys, x + w // 2, ye)
+			if not self._safe_m4_route(name, [strap], (r,)):
+				continue
 
 			sw = odb.dbSWire.create(net, "ROUTED")
 			odb.createSBoxes(sw, self.m4, [
-				odb.Rect(x - w // 2, ys, x + w // 2, ye),
+				odb.Rect(*strap),
 			], "STRIPE")
 			odb.createSBoxes(sw, self.v45.get(1, 1),
 				[odb.Point(x, ycs)], "STRIPE")
+			self.foreign_m4.append((name, strap))
+			m5x = (self.v45.cut_sz[0] + 2 * self.v45.top_enc[0] + 1) // 2
+			m5y = (self.v45.cut_sz[1] + 2 * self.v45.top_enc[1] + 1) // 2
+			self.foreign_m5.append((name, (x - m5x, ycs - m5y, x + m5x, ycs + m5y)))
 			self.reasons['strapped'] += 1
 			return 1
-		return self._tie_neighbour(net, rects)
+		if isolated:
+			result = self._tie_neighbour(net, rects)
+			if not result:
+				raise RuntimeError(f'MacroPowerVias: no safe connection for '
+					f'isolated {name} macro stripe')
+			return result
+		return 0
 
 	def _tie_neighbour(self, net, rects):
 		"""Last resort for a pin whose stripe reaches no ring segment.
@@ -1405,14 +1520,20 @@ class MacroPowerVias:
 				st2 = best_stripe(r2)
 				if st2 is None or not self._stripe_connected(name, st2):
 					continue
-				# Join in the macro-free channel: 1um past the pin, which
-				# also clears the macro's own top/bottom margin.
+				# Leave enough clearance for the full strap and other pins,
+				# including a control pin across the macro's boundary.
+				pin_bbs = self.pin_macros.get(self._rect(r), ())
+				if len(pin_bbs) != 1:
+					continue
+				bb = pin_bbs[0]
+				w = 800
+				pad = self.clearance + w // 2 + self.grid
 				if r2.yMin() > r.yMax():
 					gap = r2.yMin() - r.yMax()
-					yj = self._snap(r.yMax() + 2000)
+					yj = self._snap(max(r.yMax() + 2000, bb[3] + pad) + self.grid)
 				elif r2.yMax() < r.yMin():
 					gap = r.yMin() - r2.yMax()
-					yj = self._snap(r.yMin() - 2000)
+					yj = self._snap(min(r.yMin() - 2000, bb[1] - pad))
 				else:
 					continue
 				if gap > 80000:
@@ -1421,33 +1542,33 @@ class MacroPowerVias:
 				x2 = self._snap((r2.xMin() + r2.xMax()) // 2)
 				if abs(x1 - x2) > 24000:
 					continue
-				if any(bb.xMin() < max(x1, x2) and bb.xMax() > min(x1, x2)
-						and bb.yMin() < yj and bb.yMax() > yj
-						for bb in self.macro_bbs):
-					continue
-				if cand is None or gap < cand[0]:
-					cand = (gap, r2, x1, x2, yj)
+				if yj < r2.yMin():
+					yb = r2.yMin() + 200
+				else:
+					yb = r2.yMax() - 200
+				end = segment_rect(x2, yj, x2, yb, w)
+				# Never blindly pass through a macro's signal pin. Prefer
+				# the short direct path only if all endpoint and other-pin
+				# checks pass; otherwise try a side escape around the macro.
+				y_start = r.yMax() - 200 if yj > r.yMax() else r.yMin() + 200
+				direct = [segment_rect(x1, y_start, x1, yj, w),
+					segment_rect(x1, yj, x2, yj, w), end]
+				routes = [direct] + [p + [end] for p in gate_escape_rects(
+					self._rect(r), bb, x2, yj, w, self.clearance, self.grid)]
+				for route in routes:
+					if not self._safe_m4_route(name, route, (r, r2)):
+						continue
+					if cand is None or gap < cand[0]:
+						cand = (gap, route)
+					break
 			if cand is None:
 				continue
-			_, r2, x1, x2, yj = cand
-			w = 800
-			if yj > r.yMax():
-				ya0, ya1 = r.yMax() - 200, yj
-			else:
-				ya0, ya1 = yj, r.yMin() + 200
-			if yj < r2.yMin():
-				yb0, yb1 = yj, r2.yMin() + 200
-			else:
-				yb0, yb1 = r2.yMax() - 200, yj
+			_, route = cand
 			sw = odb.dbSWire.create(net, "ROUTED")
 			odb.createSBoxes(sw, self.m4, [
-				odb.Rect(x1 - w // 2, min(ya0, ya1),
-					x1 + w // 2, max(ya0, ya1)),
-				odb.Rect(min(x1, x2) - w // 2, yj - w // 2,
-					max(x1, x2) + w // 2, yj + w // 2),
-				odb.Rect(x2 - w // 2, min(yb0, yb1),
-					x2 + w // 2, max(yb0, yb1)),
+				odb.Rect(*rect) for rect in route
 			], "STRIPE")
+			self.foreign_m4.extend((name, rect) for rect in route)
 			self.reasons['strapped'] += 1
 			return 1
 		return 0
@@ -1472,12 +1593,34 @@ class MacroPowerVias:
 		y1 = self._snap((st[1] + st[3]) // 2)
 
 		# 0.8um wide, so the Via4 enclosure (0.76um) sits inside it.
+		m3via = (x - self.min_m3[0] // 2, y0 - self.min_m3[1] // 2,
+			x + self.min_m3[0] // 2, y0 + self.min_m3[1] // 2)
+		jog = (x - 400, min(y0, y1), x + 400, max(y0, y1))
+		v34x = (self.v34.cut_sz[0] + 2 * self.v34.top_enc[0] + 1) // 2
+		v34y = (self.v34.cut_sz[1] + 2 * self.v34.top_enc[1] + 1) // 2
+		v45x = (self.v45.cut_sz[0] + 2 * self.v45.bot_enc[0] + 1) // 2
+		v45y = (self.v45.cut_sz[1] + 2 * self.v45.bot_enc[1] + 1) // 2
+		m4vias = [(x - v34x, y0 - v34y, x + v34x, y0 + v34y),
+			(x - v45x, y1 - v45y, x + v45x, y1 + v45y)]
+		m5x = (self.v45.cut_sz[0] + 2 * self.v45.top_enc[0] + 1) // 2
+		m5y = (self.v45.cut_sz[1] + 2 * self.v45.top_enc[1] + 1) // 2
+		m5via = (x - m5x, y1 - m5y, x + m5x, y1 + m5y)
+		if (blocked_by_other_pin([m3via], net.getName(), self.foreign_m3,
+				self.clearance) or blocked_by_other_pin([jog] + m4vias, net.getName(),
+				self.foreign_m4, self.clearance) or
+				blocked_by_other_pin([m5via], net.getName(), self.foreign_m5,
+					self.m5_clearance)):
+			raise RuntimeError('MacroPowerVias: SRAM power jog/via is too '
+				f'close to a different macro pin on {net.getName()}')
 		sw = odb.dbSWire.create(net, "ROUTED")
 		odb.createSBoxes(sw, self.m4, [
-			odb.Rect(x - 400, min(y0, y1), x + 400, max(y0, y1)),
+			odb.Rect(*jog),
 		], "STRIPE")
 		odb.createSBoxes(sw, self.v34.get(1, 1), [odb.Point(x, y0)], "STRIPE")
 		odb.createSBoxes(sw, self.v45.get(1, 1), [odb.Point(x, y1)], "STRIPE")
+		self.foreign_m3.append((net.getName(), m3via))
+		self.foreign_m4.extend((net.getName(), rect) for rect in [jog] + m4vias)
+		self.foreign_m5.append((net.getName(), m5via))
 		return 1
 
 	def _snap(self, v):
@@ -1485,6 +1628,8 @@ class MacroPowerVias:
 
 	def run(self):
 		self.grid = self.reader.db.getTech().getManufacturingGrid()
+		self.clearance = 300 * self.dbu // 1000
+		self.m5_clearance = 600 * self.dbu // 1000
 
 		n4 = 0
 		n3 = 0
@@ -1493,18 +1638,71 @@ class MacroPowerVias:
 		# vdpwr stripe at the bottom of the die).
 		self.macro_pins = []
 		self.macro_bbs = []
+		self.macro_boxes = []
+		self.pin_macros = {}
+		self.m4_pin_obstacles = []
+		self.m3_pin_obstacles = []
 		for _inst in self.reader.block.getInsts():
 			if _inst.getMaster().getName().startswith(STDCELL_PREFIXES):
 				continue
-			self.macro_bbs.append(_inst.getBBox())
+			_bb = _inst.getBBox()
+			self.macro_bbs.append(_bb)
+			_bbt = self._rect(_bb)
+			self.macro_boxes.append(_bbt)
 			for _it in _inst.getITerms():
 				_net = _it.getNet()
-				if _net is None or _net.getName() not in self.NETS:
-					continue
 				for _geom in _it.getGeometries():
 					_l, _r = _geom[0], _geom[1]
-					if hasattr(_l, 'getName') and _l.getName() == 'Metal4':
-						self.macro_pins.append((_net.getName(), _r))
+					if not hasattr(_l, 'getName'):
+						continue
+					if _l.getName() == 'Metal3':
+						_name = _net.getName() if _net is not None else None
+						self.m3_pin_obstacles.append((_name, self._rect(_r)))
+					elif _l.getName() == 'Metal4':
+						_name = _net.getName() if _net is not None else None
+						_rt = self._rect(_r)
+						self.m4_pin_obstacles.append((_name, _rt))
+						if _name in self.NETS:
+							self.macro_pins.append((_name, _r))
+							self.pin_macros.setdefault(_rt, []).append(_bbt)
+		self.bridged_stripes = set()
+		self.m5_pin_obstacles = []
+		for _bt in self.reader.block.getBTerms():
+			_net = _bt.getNet()
+			_name = _net.getName() if _net is not None else None
+			for _bp in _bt.getBPins():
+				for _box in _bp.getBoxes():
+					_layer = _box.getTechLayer()
+					if _layer is None:
+						continue
+					_item = (_name, self._rect(_box))
+					if _layer.getName() == 'Metal3':
+						self.m3_pin_obstacles.append(_item)
+					elif _layer.getName() == 'Metal4':
+						self.m4_pin_obstacles.append(_item)
+					elif _layer.getName() == 'Metal5':
+						self.m5_pin_obstacles.append(_item)
+		# Conservative special-wire/via footprint obstacles. A via is treated
+		# as an obstacle on both layers even if its actual stack is lower.
+		self.foreign_m3 = list(self.m3_pin_obstacles)
+		self.foreign_m4 = list(self.m4_pin_obstacles)
+		self.foreign_m5 = list(self.m5_pin_obstacles)
+		for _net in self.reader.block.getNets():
+			for _sw in _net.getSWires():
+				for _w in _sw.getWires():
+					_box = self._rect(_w)
+					if _w.isVia():
+						self.foreign_m3.append((_net.getName(), _box))
+						self.foreign_m4.append((_net.getName(), _box))
+						self.foreign_m5.append((_net.getName(), _box))
+					else:
+						_name = _w.getTechLayer().getName()
+						if _name == 'Metal3':
+							self.foreign_m3.append((_net.getName(), _box))
+						elif _name == 'Metal4':
+							self.foreign_m4.append((_net.getName(), _box))
+						elif _name == 'Metal5':
+							self.foreign_m5.append((_net.getName(), _box))
 
 		# One Metal3 connection per (instance, net) is enough: a macro's power
 		# strips are the same net inside the macro. Each one needs a long
@@ -1721,6 +1919,14 @@ class StdCellPower:
 		self.v45 = ViaGenerator(reader, 'Via4_GEN_HH')
 
 		self.riser_w = max(2 * self.riser_ly.getWidth(), 1)
+		# Conservative GF180 metal-spacing margin around hard macros. The
+		# via stack's *whole footprint*, not just its center, must clear
+		# SRAM signal pins that can reach the macro boundary.
+		self.macro_clearance = 300 * reader.block.getDbUnitsPerMicron() // 1000
+		self.stack_half_x = max((v.cut_sz[0] + 2 * max(v.bot_enc[0],
+			v.top_enc[0]) + 1) // 2 for v in (self.v12, self.v23, self.v34))
+		self.stack_half_y = max((v.cut_sz[1] + 2 * max(v.bot_enc[1],
+			v.top_enc[1]) + 1) // 2 for v in (self.v12, self.v23, self.v34))
 
 		# Magic streams GDS on a 5nm grid (CIF scale 0.005um) while KLayout uses
 		# 1nm, so any edge we place off that grid XORs as a 1nm sliver. Snap
@@ -1728,7 +1934,8 @@ class StdCellPower:
 		self.snap = max(reader.block.getDbUnitsPerMicron() // 200, 1)
 
 		self.macros = [
-			inst.getBBox()
+			(inst.getBBox().xMin(), inst.getBBox().yMin(),
+			 inst.getBBox().xMax(), inst.getBBox().yMax())
 				for inst in reader.block.getInsts()
 					if not inst.getMaster().getName().startswith('gf180mcu_fd_sc_')
 		]
@@ -1743,27 +1950,17 @@ class StdCellPower:
 		return -((-v) // self.snap) * self.snap
 
 	def _path_blocked(self, x, y0, y1):
-		# Would a Metal4 riser from y0 to y1 at x pass through a macro ?
-		for bb in self._macros_in(y0, y1):
-			if bb.xMin() <= x <= bb.xMax():
-				return True
-		return False
-
-	def _macros_in(self, y0, y1):
-		# Macros whose vertical extent intersects [y0, y1]. Pre-filtering
-		# keeps the riser search cheap (it runs for every candidate x).
-		return [
-			bb for bb in self.macros
-				if (y1 > bb.yMin()) and (y0 < bb.yMax())
-		]
+		# Include the full riser width and end caps, not only its centerline.
+		h = (self.riser_w + 1) // 2
+		return self._rect_blocked(x - h, y0 - h, x + h, y1 + h)
 
 	def _rect_blocked(self, x0, y0, x1, y1):
-		# Would a Metal4 rectangle hit a macro ?
-		for bb in self.macros:
-			if (bb.xMin() < x1) and (bb.xMax() > x0) and \
-					(bb.yMin() < y1) and (bb.yMax() > y0):
-				return True
-		return False
+		return blocked_by_macro((x0, y0, x1, y1), self.macros,
+			self.macro_clearance)
+
+	def _stack_blocked(self, x, y):
+		return self._rect_blocked(x - self.stack_half_x, y - self.stack_half_y,
+			x + self.stack_half_x, y + self.stack_half_y)
 
 	def _rect_conflict(self, net_name, x0, y0, x1, y1, placed):
 		# Same as _riser_conflict but for an arbitrary rectangle (the placed
@@ -1791,6 +1988,8 @@ class StdCellPower:
 
 		for side, end in ((1, rx1 - m1_half_w), (-1, rx0 + m1_half_w)):
 			xv = self._snap_lo(end) if side > 0 else self._snap_hi(end)
+			if self._stack_blocked(xv, yv):
+				continue
 			# 512 lanes ~= 570um: a rail entirely inside the two stacked
 			# 568um-wide Arrakeen SRAMs (the row in their 7.7um gap) has to
 			# reach a column past one of them before it can go up to a
@@ -2062,6 +2261,8 @@ class StdCellPower:
 			found = None
 			for k in ks:
 				x = self._snap_lo(lo + k * lane)
+				if self._stack_blocked(x, self._snap_lo(yc)):
+					continue
 
 				for yt in stripe_order:
 					if self._path_blocked(x, min(yc, yt), max(yc, yt)):
@@ -2117,6 +2318,8 @@ class StdCellPower:
 			if found is None:
 				n_skipped += 1
 				n_sideways_fail += 1
+				print(f'StdCellPower: no safe path for {net_name} '
+					f'rail ({rx0},{ry0})-({rx1},{ry1})')
 				continue
 
 			x, yvia, yriser, ya, yb = found
@@ -2140,6 +2343,9 @@ class StdCellPower:
 			f'(narrow {n_narrow}, no vertical path {n_blocked}, '
 			f'sideways failed {n_sideways_fail}), '
 			f'{n_conflict} lane conflicts, {n_degenerate} degenerate')
+		if n_skipped:
+			raise RuntimeError(f'StdCellPower: {n_skipped} rails have no '
+				'safe supply path; refusing to leave them unpowered')
 
 
 class RingTie:

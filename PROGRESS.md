@@ -5,6 +5,23 @@ The SPICE testbenches, results and recorded evidence are in
 The status below describes the `silicon-safety-validation` branch; it is
 not a claim that `main` is safe for tapeout.
 
+> **Power-routing fix candidate:** SRAM macro placement now reserves a 1 µm
+> halo; standard-cell power stacks and risers are checked against complete
+> macro bounds with enclosure and clearance, and skipped rails fail the
+> flow. Isolated Metal5 power stripes can be bridged through a checked,
+> reserved Metal4 corridor outside hard macros instead of crossing a
+> power-gate control. The legacy LVS step now stops on raw
+> signal/supply conflicts rather than moving signal pins onto the DEF net.
+> `validate_power_routing_odb.py` replayed selected steps on the baseline
+> post-placement ODB with OpenROAD wheel 26Q4: 339/339 rail risers placed,
+> 1,335 generated via boxes clear macro halos, four gate control pins clear
+> foreign special wires, and four isolated-stripe bridges were created.
+> The old post-route ODB fails the gate-control check as expected.
+> This **partial replay excludes** module straps, signal routing, final GDS,
+> DRC and LVS. It is not a verified fix or sign-off; 12 logic cells lacked
+> an immediately adjacent free well-tap site in that replay. A complete
+> candidate CI rebuild and independent GDS verification are still required.
+
 > **Final-SPICE power-port issue:** in run `45835066447`, the custom LVS
 > repair renamed cell-body power/ground nets to `vdpwr`/`vgnd` while the
 > `final/spice` header exposes `vccd*`/`vssd*`/`vssa*` instead. No
@@ -137,9 +154,12 @@ not a claim that `main` is safe for tapeout.
 > Candidate mux commit `131bf55` and shuttle pointer commit `e81fad8` are on
 > `silicon-safety-validation` branches; neither main branch was changed for
 > this safety work. The shuttle candidate commit changes only the submodule
-> pointer relative to its parent. Validation run `45846356720` was still
-> in `Harden tt_top` after more than two hours when its watcher timed out;
-> no conclusion or sign-off is available.
+> pointer relative to its parent. Validation run `45846356720` ultimately
+> failed after 2h55m in `Harden tt_top` with 30 routing DRC errors and 14
+> LVS errors; it also reported 15,138 Magic DRC and 10,214 illegal-overlap
+> markers. Detailed routing took about 170 minutes. The new candidate caps
+> optimization iterations at 16 instead of 64 to fail faster on persistent
+> violations; the checkers remain enabled and its runtime is not yet known.
 
 **Date:** 2026-11-25
 **Repos:** `opilitethesmartdev/hackclub-asic-pg` (CI) + submodule `tt-multiplexer-sram-v2` (design)

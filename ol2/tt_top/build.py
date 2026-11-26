@@ -19,6 +19,7 @@ import shutil
 import sys
 
 from typing import List, Type
+from signal_supply_check import def_pin_nets, signal_supply_conflicts
 
 from librelane.common import Path
 from librelane.flows.misc import OpenInKLayout
@@ -221,18 +222,16 @@ class MergeWellNets(Step):
 		rail onto the ground net (every tapped cell then reports
 		VDD = VSS = vssd2).
 
-		The real layout does not have that short: the PDK tap cell's GDS has
-		diffusion and well contacts (the flow streams the PDK cell GDS, so the
-		fabricated device ties are correct), and a full metal-level
-		connectivity check of the DEF (special nets + routed nets + every
-		instance pin) finds no path between vdpwr and vgnd anywhere.
+		This is an abstract-netlist workaround, not evidence that the drawn
+		GDS lacks a supply short. The actual layout still needs independent
+		unmodified physical verification.
 
-		So repair exactly that artefact: when the extractor put a standard
+		For the legacy abstract comparison, when the extractor put a standard
 		cell's VDD and VSS on one net, map VDD/VNW to vdpwr and VPW/VSS to
 		vgnd. Only standard cells are touched, and only when the merged net
 		carries no other pin of the instance, so a real short between a
-		supply and a signal is never hidden - such an instance is left alone
-		and LVS still fails on it.
+		supply and a signal may still be hidden by other transformations; the
+		raw signal/supply check runs first and the comparison is not sign-off.
 		"""
 		pins = self._subckt_pins(text)
 		lines = text.splitlines(keepends=True)
@@ -430,104 +429,33 @@ class MergeWellNets(Step):
 
 	@staticmethod
 	def _def_pin_nets(def_path):
-		"""Read the DEF's instance-pin -> net map (the golden connectivity).
-
-		Parses only the pin lists on the `- net` lines, which is all the
-		repair below needs.
-		"""
-		conn = {}
+		"""Read the DEF's intended instance-pin -> net map."""
 		if not def_path:
-			return conn
-		in_nets = False
+			return {}
 		with open(def_path, encoding='utf-8', errors='replace') as f:
-			for line in f:
-				s = line.strip()
-				if s.startswith('END NETS'):
-					break
-				if s.startswith('NETS'):
-					in_nets = True
-					continue
-				if not in_nets or not s.startswith('- '):
-					continue
-				m = re.match(r'-\s+(\S+)\s+(.*)', s)
-				if not m:
-					continue
-				net = m.group(1)
-				for inst, pin in re.findall(
-						r'\(\s*(\S+)\s+(\S+)\s*\)', m.group(2)):
-					conn[(inst, pin)] = net
-		return conn
+			return def_pin_nets(f.read())
 
 	def _repair_signal_pins(self, text, def_path):
-		"""Move a signal pin that the extractor merged into a supply back.
+		"""Detect signal pins extracted onto supply; never repair them for LVS.
 
-		Magic's abstract extraction can merge a macro signal pin into the
-		supply at the macro boundary: the Arrakeen SRAM's q[22] is a 0.28um
-		Metal3 strip on the macro edge and comes out on vssd2, even though
-		both the routed DEF and the SRAM's own .ext keep it on its own node
-		(so the extracted netlist shows sram_lo/q[22] and the mux I0 that it
-		drives on the ground net).
-
-		The DEF is the golden connectivity. Where it says a pin is on a
-		signal net but the extracted netlist has that pin on a supply, put
-		the pin back on the DEF net. A supply-to-signal short that the DEF
-		also has is left alone (the DEF is what is compared, so it would be
-		a real short), and the reverse direction - a supply pin that the
-		extractor left floating - is deliberately *not* repaired here: that
-		one is a real PDN defect and is fixed in the layout instead.
+		The routed DEF describes intent, not actual drawn connectivity. The
+		old rewrite concealed a q[22]-to-ground GDS short. Even if an apparent
+		short is an extraction artefact it must be investigated, not rewritten
+		to force a passing comparison.
 		"""
 		conn = self._def_pin_nets(def_path)
 		if not conn:
-			return text, 0
-		pins = self._subckt_pins(text)
+			raise RuntimeError('Cannot check extracted signal/supply shorts: '
+				'missing DEF net connectivity')
 		supply = {'vdpwr', 'vgnd', 'vapwr'}
 		for group in self.SUPPLY_GROUPS:
 			supply.update(group)
-
-		design = self.config['DESIGN_NAME']
-		lines = text.splitlines(keepends=True)
-		start = None
-		for i, line in enumerate(lines):
-			if re.match(r'\.subckt\s+' + re.escape(design) + r'(\s|$)', line):
-				start = i
-				break
-		if start is None:
-			return text, 0
-		hdr_end = start
-		while hdr_end + 1 < len(lines) and lines[hdr_end + 1].startswith('+'):
-			hdr_end += 1
-
-		out = lines[:hdr_end + 1]
-		fixed = 0
-		i = hdr_end + 1
-		while i < len(lines):
-			line = lines[i]
-			if not line.startswith('X'):
-				out.append(line)
-				i += 1
-				continue
-			toks = line.split()
-			j = i + 1
-			while j < len(lines) and lines[j].startswith('+'):
-				toks += lines[j].lstrip('+').split()
-				j += 1
-			if toks and toks[-1] in pins and len(toks) - 2 == len(pins[toks[-1]]):
-				inst = toks[0][1:]
-				nets = toks[1:-1]
-				changed = False
-				for k, pin in enumerate(pins[toks[-1]]):
-					golden = conn.get((inst, pin))
-					if golden is None:
-						continue
-					if nets[k] in supply and golden not in supply:
-						nets[k] = golden
-						changed = True
-				if changed:
-					toks = [toks[0]] + nets + [toks[-1]]
-					fixed += 1
-			out.extend(t + '\n' for t in self._wrap(toks))
-			i = j
-		return ''.join(out), fixed
+		conflicts = signal_supply_conflicts(text, self.config['DESIGN_NAME'],
+			self._subckt_pins(text), conn, supply)
+		for inst, pin, node, golden in conflicts:
+			print(f'Extracted signal/supply conflict: {inst}/{pin}: '
+				f'{node} vs DEF {golden}')
+		return text, len(conflicts)
 
 	def run(self, state_in, **kwargs):
 		src = state_in[DesignFormat.SPICE]
@@ -539,10 +467,6 @@ class MergeWellNets(Step):
 		with open(src, encoding='utf-8') as f:
 			text = f.read()
 
-		text, merged_fixed, merged_unsafe = self._split_merged_supplies(text)
-		text, short_res = self._drop_short_resistors(text)
-		text, supply_renamed = self._canonical_supply_nets(
-			text, self.config['DESIGN_NAME'])
 		# The state keys are DesignFormat members in LibreLane but plain
 		# strings in the JSON; try both before giving up on the repair.
 		def_path = None
@@ -566,7 +490,14 @@ class MergeWellNets(Step):
 				f'{self.config["DESIGN_NAME"]}.def')))
 			if cands:
 				def_path = cands[-1]
-		text, signal_fixed = self._repair_signal_pins(text, def_path)
+		_, signal_conflicts = self._repair_signal_pins(text, def_path)
+		if signal_conflicts:
+			raise RuntimeError(f'{signal_conflicts} extracted instances have '
+				'signal/supply conflicts; refusing to rewrite layout for LVS')
+		text, merged_fixed, merged_unsafe = self._split_merged_supplies(text)
+		text, short_res = self._drop_short_resistors(text)
+		text, supply_renamed = self._canonical_supply_nets(
+			text, self.config['DESIGN_NAME'])
 		text, count = re.subn(r'(?<!\S)\S+/VNW(?!\S)', 'vdpwr', text)
 		text, dropped = self._collapse_ports(text, self.config['DESIGN_NAME'])
 
@@ -580,7 +511,7 @@ class MergeWellNets(Step):
 			f'carries a signal pin), '
 			f'{short_res} same-supply short resistors dropped, '
 			f'{supply_renamed} supply net tokens renamed to the schematic names, '
-			f'{signal_fixed} signal pins moved off a supply net')
+			'0 signal pins moved off a supply net')
 
 		return {DesignFormat.SPICE: Path(dst)}, {}
 
@@ -1122,13 +1053,11 @@ if __name__ == '__main__':
 		# successful repair pass alone is not manufacturing sign-off.
 		"GRT_REPAIR_ANTENNAS"   : True,
 		"DRT_ANTENNA_REPAIR_ITERS" : 3,
-		# A healthy run terminates on its own once there are no violations
-		# left. The last remaining defect is one module<->mux net that the
-		# detailed router leaves both legally connected *and* with a redundant
-		# loop running through the module's Metal4 VSS strip; the "stubborn
-		# tiles" passes were still converging (12 -> 9 violations) when the
-		# old 32-iteration cap hit, so give them room to finish.
-		"DRT_OPT_ITERS"         : 64,
+		# Candidate run 45846356720 spent nearly 170 minutes in detailed
+		# routing with repeated 64-iteration antenna-repair passes and still
+		# failed with 30 routing DRCs. Bound nonconverging runs; the DRC checker
+		# stays enabled and a nonzero result remains a failure, not a waiver.
+		"DRT_OPT_ITERS"         : 16,
 		# The remaining routing DRCs sit in a very small congested pocket at
 		# the SRAM address pins. Metal4 alone does not give the router enough
 		# room to escape there; Metal5 carries only the power stripes.

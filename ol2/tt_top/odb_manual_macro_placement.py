@@ -7,10 +7,14 @@
 # Every instance that exists in the database is still placed at its configured
 # location and orientation.
 
+import os
 import sys
 from decimal import Decimal
 
+import odb
 from reader import click_odb, click
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from routing_safety import placement_halo_strips
 
 
 @click.group
@@ -38,6 +42,26 @@ def lef_rot_to_oa_rot(rot):
 
 def gridify(value, grid):
     return round(value / grid) * grid
+
+
+def reserve_sram_power_clearance(block, inst):
+    """Keep stdcell rows away from the SRAM edge before placement.
+
+    A stdcell supply rail at the exact SRAM boundary previously placed a
+    stacked ground via over an SRAM Metal3 signal. The 1 µm placement halo
+    provides space for the complete via/riser enclosure and the conservative
+    0.3 µm macro clearance checked later. This is not a foundry DRC check.
+    """
+    if inst.getMaster().getName() != "SP6TSRAM256x32":
+        return 0
+    halo = block.getDbUnitsPerMicron()
+    bb = inst.getBBox()
+    strips = placement_halo_strips(
+        (bb.xMin(), bb.yMin(), bb.xMax(), bb.yMax()), halo)
+    for coords in strips:
+        if odb.dbBlockage.create(block, *coords) is None:
+            raise RuntimeError("failed to create SRAM placement clearance")
+    return len(strips)
 
 
 @click.command()
@@ -69,6 +93,7 @@ def manual_macro_placement(reader, config, fixed):
 
     print("Placing configured macro instances:")
     placed = 0
+    clearance_strips = 0
     missing = []
 
     for inst in reader.block.getInsts():
@@ -88,6 +113,7 @@ def manual_macro_placement(reader, config, fixed):
         inst.setOrient(lef_rot_to_oa_rot(orientation))
         inst.setLocation(gridify(x, 5), gridify(y, 5))
         inst.setPlacementStatus("FIRM" if fixed else "PLACED")
+        clearance_strips += reserve_sram_power_clearance(reader.block, inst)
         placed += 1
 
     missing = sorted(item[0] for item in macros.values())
@@ -100,6 +126,7 @@ def manual_macro_placement(reader, config, fixed):
             print(f"* {name}", file=sys.stderr)
 
     print(f"Successfully placed {placed} macro instances; skipped {len(missing)} absent instances.")
+    print(f"Created {clearance_strips} SRAM placement-clearance strips.")
 
 
 cli.add_command(manual_macro_placement)

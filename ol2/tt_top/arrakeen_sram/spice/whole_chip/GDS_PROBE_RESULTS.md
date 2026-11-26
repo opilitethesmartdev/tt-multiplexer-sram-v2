@@ -3,6 +3,26 @@
 **No whole-chip functional result was obtained. Do not treat this as LVS,
 PEX, or evidence that the chip is safe to manufacture.**
 
+## Subsequent power-routing fix candidate
+
+The validation branch includes source-level placement and power-routing
+changes described in `PROGRESS.md`. The baseline remains defective; it was
+not patched. An independent partial replay of placement legalization and
+power routing on the old pre-route ODB passed targeted checks, while the
+original post-route ODB fails its gate-control check. The successful replay
+log is `artifacts/power_routing_partial_odb_replay.log.gz`.
+
+With an OpenROAD Python wheel, reproduce from `ol2/tt_top`:
+
+```sh
+python3 validate_power_routing_odb.py /path/to/12-openroad-detailedplacement/tt_gf_wrapper.odb
+python3 validate_power_routing_odb.py --check-gates-only /path/to/13-tt-top-customroute/tt_gf_wrapper.odb
+```
+
+The second command is expected to fail on the baseline. The replay skips
+module power straps, signal routing and streamout; it cannot establish
+final GDS correctness, well-tap coverage, supply integrity, or sign-off.
+
 ## Inputs and extraction
 
 - Chip: CI run `45835066447`, mux commit `2914d8a`, not the newer candidate.
