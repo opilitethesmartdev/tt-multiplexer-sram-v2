@@ -167,24 +167,46 @@ provided from the correct PDK. This LVS-mode extraction is not PEX.
 The raw flat `.ext` maps `top_I.sram_q_lo[22]` to `vssd2`, consistent with
 the independent geometry witness above. It also maps
 `top_I.branch[14].check_mask.l_um_pg_ena[1]` to `vccd2`; the DEF calls that
-branch enable a signal net. This is an additional unverified extracted
-association, not an independent determination of a physical short. The
-flat hierarchy does not preserve the SRAM `vdd` macro-port boundaries, so it
-cannot by itself resolve the separate hierarchical SRAM supply observation.
+branch enable a signal net. A separate geometry check below strongly
+indicates a second physical short. The flat hierarchy does not preserve
+the SRAM `vdd` macro-port boundaries, so it cannot by itself resolve the
+separate hierarchical SRAM supply observation.
 
-An exploratory flat-netlist ngspice run is in progress under a 7,000,000
-KiB virtual-memory limit. It uses the same factory stimulus and ties all
+An exploratory flat-netlist ngspice run under a 7,000,000 KiB virtual-memory
+limit failed with `malloc: can't allocate 40 bytes` before transient data.
+The unmodified log is `artifacts/factory_flat_7gb_failed.log.gz`; this is
+not a functional pass or fail. It used the same factory stimulus and tied all
 listed power groups to 3.3 V and all grounds together in the testbench;
 these are **unverified assumptions**, not established physical pin mapping.
-No flat whole-chip transient result is claimed yet. Even a functional pass
-would not resolve the identified physical/connectivity defects. The earlier
-ngspice failure was on the hierarchical file and does not establish the
-flat file's memory requirement. Neither netlist has been silently rewired.
+Even a functional pass would not resolve the identified physical/connectivity
+defects. Neither netlist has been silently rewired.
 
 Reproduce the exploratory flat deck by replacing the `--raw-spice` argument
 in the instructions below with the decompressed flat artifact and omitting
 `--simulation-copy`; unlike the hierarchical netlist it has no `$SUB`
 tokens. The generator checks the input hash and exact extracted port set.
+
+### Branch power-gate geometry witness
+
+The baseline DEF places branch 14 block 1's `tt_pg_3v3_hp_1` at
+`(3988320, 250880) FN` in 2000 units/µm. The GDS has the corresponding
+`m90 2005360,125440` instance. In its macro the Metal4 polygons selected
+by the `ctrl` and `VPWR` text labels are distinct. However, the baseline
+root GDS contains a **single merged Metal4 component** that positively
+overlaps both:
+
+- `ctrl` overlap bbox `(2002.710, 285.860)`–`(2003.110, 286.160)` µm,
+  area 0.120000 µm².
+- `VPWR` overlap bbox `(2000.460, 277.450)`–`(2005.360, 285.560)` µm,
+  area 39.287200 µm².
+
+The VPWR overlap may be nonrectangular; its bounding box is not its area.
+`trace_power_gate_short.py /path/to/tt_gf_wrapper.gds` checks the hash,
+instance transform, labels and positive-area overlaps without Magic
+extraction, and exits 1 for this baseline witness.
+`test_trace_power_gate_short.py` passes four synthetic tests. This strongly
+indicates a control-to-supply short in the baseline GDS; it is not a
+complete DRC/LVS or evidence about the newer candidate.
 
 ## Reproduce the exploratory deck
 

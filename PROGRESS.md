@@ -46,10 +46,12 @@ not a claim that `main` is safe for tapeout.
 > whole-chip extraction using 432 exact child patterns failed at a 4.5 GB
 > virtual-memory limit during GDS import; a 7,000,000 KiB retry completed
 > with 12 warnings. Its raw flat netlist has 847,235 MOS instances and
-> maps `q[22]` to ground. One branch power-gate enable also aliases `vccd2`;
-> that second association requires independent investigation. Supply-port
-> mapping is unverified; a bounded exploratory flat ngspice run is in
-> progress, and no flat whole-chip transient result is claimed.
+> maps `q[22]` to ground. A branch power-gate enable also aliases `vccd2`;
+> separate GDS polygon analysis strongly indicates a second physical short
+> between that gate's control and supply. Supply-port mapping is unverified.
+> An exploratory flat ngspice run failed to allocate memory under a
+> 7,000,000 KiB limit before transient data; no whole-chip functional
+> result is claimed.
 
 > **Whole-chip SPICE preflight:** the raw top-level SPICE from run
 > `45835066447` was created by Magic from OpenROAD DEF/LEF
