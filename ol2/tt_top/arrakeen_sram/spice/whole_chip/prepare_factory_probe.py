@@ -121,8 +121,9 @@ def main():
             raise ValueError(f"refusing to overwrite {args.output}")
         args.output.write_text(text, encoding="utf-8", newline="\n")
         print("Prepared exploratory deck; no extracted connectivity was altered.")
-        print("WARNING: raw GDS extraction reports q[22] on ground and 129538 "
-              "label-overlap warnings; this run cannot establish silicon safety.")
+        print("WARNING: raw GDS extraction reports q[22] on ground, two "
+              "unsourced SRAM vdd nets, and 129538 label-overlap warnings; "
+              "this run cannot establish silicon safety.")
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
 

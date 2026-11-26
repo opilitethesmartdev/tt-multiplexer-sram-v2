@@ -152,6 +152,13 @@ def audit(paths, top):
     # net-name check only; it cannot decide whether extraction is correct.
     signals_on_supply = []
     top_sub = selected[top_key]
+    component_uses = defaultdict(set)
+    for line in top_sub.elements:
+        tokens = line.split()
+        if not tokens:
+            continue
+        for token in tokens[1:]:
+            component_uses[token.lower()].add(tokens[0].lower())
     # Detect a completely disconnected group of explicit top-level supply
     # ports. A single disconnected alias can be legitimate, but if *none*
     # of the digital supply ports appears in the circuit body, an external
@@ -169,6 +176,7 @@ def audit(paths, top):
         if ports and not (ports & body_tokens):
             disconnected_supply_groups.append((label, sorted(ports)))
 
+    dangling_sram_supply = []
     for instance, nodes, master in top_sub.instances():
         if master.lower() != "sp6tsram256x32":
             continue
@@ -186,6 +194,10 @@ def audit(paths, top):
         for port, node in connections.items():
             if re.fullmatch(r"q\[\d+\]", port) and node.lower() in supply:
                 signals_on_supply.append((instance, port, node))
+            if re.fullmatch(r"v(?:dd|ss)(?:_uq\d+)?", port):
+                users = component_uses[node.lower()]
+                if users == {instance.lower()} and node.lower() not in top_ports:
+                    dangling_sram_supply.append((instance, port, node))
 
     return {
         "source_hashes": source_hashes,
@@ -199,6 +211,7 @@ def audit(paths, top):
         "bad_arity": bad_arity,
         "signals_on_supply": signals_on_supply,
         "disconnected_supply_groups": disconnected_supply_groups,
+        "dangling_sram_supply": dangling_sram_supply,
     }
 
 
@@ -232,12 +245,15 @@ def main():
         print(f"PIN COUNT {parent}/{inst} {master}: {got}, expected {expected}")
     for inst, port, net in result["signals_on_supply"]:
         print(f"SRAM OUTPUT ON SUPPLY {inst} {port} -> {net}")
+    for inst, port, net in result["dangling_sram_supply"]:
+        print(f"UNSOURCED SRAM SUPPLY {inst} {port} -> {net}")
     for group, ports in result["disconnected_supply_groups"]:
         print(f"DISCONNECTED SUPPLY GROUP {group}: no listed port appears "
               f"in top circuit elements: {', '.join(ports)}")
     failed = any(result[k] for k in ("empty", "missing", "port_order_mismatches",
                                       "duplicate_implementations", "bad_arity",
-                                      "signals_on_supply", "disconnected_supply_groups"))
+                                      "signals_on_supply", "disconnected_supply_groups",
+                                      "dangling_sram_supply"))
     if failed:
         print("FAIL: whole-chip transistor simulation is not ready; no connectivity repaired.")
         return 1

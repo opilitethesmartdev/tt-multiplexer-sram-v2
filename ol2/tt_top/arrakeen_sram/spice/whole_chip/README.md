@@ -51,6 +51,11 @@ Running the requested `gds flatglob *` sequence on the whole-chip GDS with
 Magic 8.3.677 and the pinned PDK `.magicrc` produced **no SPICE**: the
 pattern also matched `tt_gf_wrapper`, and Magic reported "There is nothing
 here to extract." The original log is `artifacts/flatglob_star_wholechip.log.gz`.
+The parameterized version of the exact requested sequence is
+`extract_flatglob_star.tcl`.
+In this Magic version, matched cells are saved for painting **when
+instantiated**; the uninstantiated root is therefore not painted. See
+[`CalmaRdcl.c`](https://github.com/RTimothyEdwards/magic/blob/3f1747b1fb915358414da70659b82cecb0314be2/calma/CalmaRdcl.c#L576-L621).
 
 As a controlled alternative, `make_child_flat_tcl.py` enumerates GDS cell
 names with `gdstk` and emits an exact `gds flatglob` pattern for each child,
@@ -59,8 +64,10 @@ flat subcircuit with 52,414 transistor instance lines. Its unmodified
 SPICE is `artifacts/childflat_sram_from_gds.spice.gz`, uncompressed SHA-256
 `2fad185c295c5b6907008f8fc5f429e29096e6d4fbf281dd7214ad4d2b53c5cc`.
 It has an extra `vdd_uq0` port and has not passed independent LVS.
-The whole-chip child-only flatten extraction is in progress; do not assume
-it will fit in memory or produce a correct netlist.
+The whole-chip child-only flatten extraction failed at a 4.5 GB
+virtual-memory limit during GDS import (`artifacts/childflat_wholechip_4p5gb_failed.log.gz`);
+a bounded 7 GB retry is running. No whole-chip flattened SPICE is available
+or independently validated yet.
 
 The `final/spice/tt_gf_wrapper.spice` for this run has 88 top-level ports,
 but the custom LVS repair replaced cell-body nodes `vccd2`/`vssd2` with

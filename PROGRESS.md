@@ -23,8 +23,10 @@ not a claim that `main` is safe for tapeout.
 > has 79 pins); its SPICE is preserved in `spice/whole_chip/artifacts/`.
 > Direct extraction of the full run-`45835066447` GDS has completed:
 > 129,538 node-label overlap warnings and the same `sram_lo/q[22]` to ground
-> association in Magic's extracted netlist. These are not independent proof
-> of physical shorts. An exploratory whole-chip ngspice run could not
+> association in Magic's extracted netlist. Each SRAM `vdd` port is also on
+> an otherwise unreferenced top-level net, while `vdd_uq5` reaches `vccd2`.
+> These observations require investigation and are not proof of physical
+> shorts or disconnections. An exploratory whole-chip ngspice run could not
 > produce transient data: the raw netlist hit a `$SUB` parsing issue; a
 > reversible syntax-only rename got past that issue but ran out of memory
 > under a 4.5 GB limit. The exact inputs, output, feedback and failed logs
@@ -36,7 +38,8 @@ not a claim that `main` is safe for tapeout.
 > to extract" and created no SPICE because `flatglob *` matched the top.
 > Flattening all 53 SRAM child cells while excluding its root produced a flat
 > 52,414-transistor-line SPICE pilot (not LVS-validated). The corresponding
-> whole-chip extraction using 432 exact child patterns is running.
+> whole-chip extraction using 432 exact child patterns failed at a 4.5 GB
+> virtual-memory limit during GDS import; a bounded 7 GB retry is running.
 
 > **Whole-chip SPICE preflight:** the raw top-level SPICE from run
 > `45835066447` was created by Magic from OpenROAD DEF/LEF
@@ -122,7 +125,9 @@ not a claim that `main` is safe for tapeout.
 > Candidate mux commit `131bf55` and shuttle pointer commit `e81fad8` are on
 > `silicon-safety-validation` branches; neither main branch was changed for
 > this safety work. The shuttle candidate commit changes only the submodule
-> pointer relative to its parent. Validation run `45846356720` is in progress.
+> pointer relative to its parent. Validation run `45846356720` was still
+> in `Harden tt_top` after more than two hours when its watcher timed out;
+> no conclusion or sign-off is available.
 
 **Date:** 2026-11-25
 **Repos:** `opilitethesmartdev/hackclub-asic-pg` (CI) + submodule `tt-multiplexer-sram-v2` (design)

@@ -40,6 +40,15 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(result["port_order_mismatches"], [("sp6tsram256x32", 3, 3, True)])
             self.assertEqual(result["signals_on_supply"], [("Xram", "q[22]", "g")])
 
+    def test_unsourced_sram_supply(self):
+        raw = (".subckt SP6TSRAM256x32 q[22] vss vdd vdd_uq5\n.ends\n"
+               ".subckt top g p\nXram q g internal p SP6TSRAM256x32\n.ends\n")
+        with TemporaryDirectory() as d:
+            top = Path(d) / "top.spice"
+            top.write_text(raw)
+            result = audit([top], "top")
+            self.assertEqual(result["dangling_sram_supply"], [("Xram", "vdd", "internal")])
+
     def test_arity_and_duplicates_fail(self):
         top = ".subckt top a b\nX1 a child\n.ends\n"
         child = ".subckt child a b\nR1 a b 1k\n.ends\n"

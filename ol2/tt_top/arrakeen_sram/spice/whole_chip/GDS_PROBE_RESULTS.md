@@ -33,6 +33,14 @@ The raw full-GDS extraction, like the prior DEF/LEF extraction, associates
 modes using the same Magic technology/engine, **not** independent proof of
 a physical short. The warnings and this association require investigation.
 
+The same extracted top connects each SRAM macro's `vdd` port to a distinct
+net (`top_I.sram_lo_I/vdd` or `top_I.sram_hi_I/vdd`) that appears on no
+other top-level component, while `vdd_uq5` connects to `vccd2`. In this
+SPICE representation the two `vdd` nets therefore have no top-level
+supply source. Whether this indicates a physical disconnect or an
+extraction/label artifact is unresolved; do not silently tie these nets
+when claiming to simulate unmodified layout.
+
 ## Ngspice attempts
 
 The exploratory test instantiates the exact extracted whole-chip top,
