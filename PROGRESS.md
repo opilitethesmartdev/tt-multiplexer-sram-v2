@@ -30,9 +30,12 @@ not a claim that `main` is safe for tapeout.
 > This follow-up is still only a partial replay; independent final-GDS
 > verification remains required. Full workflow `45878140018` is running on
 > shuttle `2ae29c8` with mux `78dc89d`.
-> A separate 52,414-device SRAM GDS-pilot write-address simulation is also
-> running using the pinned PDK, with the extracted `vdd` and `vdd_uq0`
-> externally tied as an explicit, unverified supply assumption.
+> A separate 52,414-device SRAM GDS-pilot write-address simulation using
+> the pinned PDK reproduced the compiler-schematic/Verilog mismatch: the
+> word was written at the current rather than previous address. The
+> extracted `vdd` and `vdd_uq0` were externally tied as an explicit,
+> unverified supply assumption; the extraction is not LVS-validated.
+> Additional short post-clock data/write-enable hold tests are running.
 > Reusable local GDS checks found the prior failed candidate `45846356720`
 > still has the power-gate control-to-supply bridge, but no q[22]-to-nearby
 > ground path within the tested window. This is not full LVS.

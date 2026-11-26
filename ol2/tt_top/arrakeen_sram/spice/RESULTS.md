@@ -1,7 +1,7 @@
 # Local validation results
 
-These are limited, pre-layout compiler-schematic simulations, **not**
-manufacturing sign-off. See `README.md` for the testbench assumptions.
+These are limited compiler-schematic and isolated-GDS-pilot simulations,
+**not** manufacturing sign-off. See `README.md` for assumptions.
 
 ## Bitcell
 
@@ -89,3 +89,31 @@ values merely to make tests pass or claim the SRAM works from the GL tests.
 Full-bank retention and two-bank isolation have not been run with the real
 macro. Their decks do run with a deliberately nonfunctional dummy macro,
 and the checker correctly rejects its wrong outputs.
+
+## SRAM GDS-extraction write-address probe
+
+The same write-address stimulus was run against the separate SRAM GDS
+child-flatten extraction, using ngspice 44.2, the CI-pinned GF180MCUd
+`typical` models, 3.3 V and 25 °C. The extracted 80-pin interface has both
+`vdd` and `vdd_uq0`; the **testbench explicitly ties both to 3.3 V**, an
+unverified assumption about external supply connections. The extraction
+has not passed independent LVS and does not include extracted parasitics.
+It is not the complete routed chip.
+
+The unmodified behavioral expectation fails on the GDS-extracted circuit:
+
+| Address read | Compiler Verilog expected | GDS-extracted SPICE observed |
+|---|---:|---:|
+| Previous address 0 | `aa55aa55` | `00000000` |
+| Current address 255 | `00000000` | `aa55aa55` |
+
+This is consistent with the earlier compiler-schematic transistor result,
+but it does not resolve timing margins or prove the supply mapping. The raw
+log and waveform are `whole_chip/artifacts/sram_gds_write_address.log.gz`
+and `whole_chip/artifacts/sram_gds_write_address_wave.dat.gz`; the actual
+deck and a fail-closed name-based generator are also in `whole_chip/`.
+The original compiler Verilog and expected results remain unchanged.
+The uncompressed log SHA-256 is
+`19a93df94df15c6a8416869fc7302a6e6e1d2608819f961130612b744e20d209`;
+the waveform SHA-256 is
+`05ae14e34903876333532e52e4292ae36a5f75c582db784cb5f391b5df96f973`.
