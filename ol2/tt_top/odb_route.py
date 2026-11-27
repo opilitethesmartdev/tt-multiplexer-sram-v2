@@ -2369,7 +2369,13 @@ class StdCellPower:
 		# while still passing DRC. Keep one lane of clearance between risers of
 		# different nets over their common vertical extent.
 		for pnet, px0, px1, py0, py1 in placed:
-			if (yb <= py0) or (ya >= py1):
+			# Different nets also clash end-to-end: a riser that stops at a
+			# row boundary where one of the other net starts puts their
+			# via pads 0.25um apart on Metal4 (M4.2a). So for the other net
+			# the vertical extents count as overlapping when they come
+			# within a pad plus clearance of each other.
+			m = 0 if pnet == net_name else (self.riser_w + self.clear)
+			if (yb + m <= py0) or (ya - m >= py1):
 				continue
 			if pnet == net_name:
 				# Same net: risers either coincide or keep a full Metal4

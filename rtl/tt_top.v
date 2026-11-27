@@ -245,9 +245,39 @@ module tt_top #(
 	assign sram_sel_top = |(sram_branch_match & ODD_BRANCHES);
 	assign sram_sel_bot = |(sram_branch_match & EVEN_BRANCHES);
 
+	// The spine SRAM bus is a long net driven from a far mux; buffer it
+	// where it enters tt_top so the request decode sees a sharp edge (the
+	// raw net into a nand4_1 was 8 ns at 3.3V slow corner).
+	wire [N_SRAM_OW-1:0] spine_top_sram_ow_b;
+	wire [N_SRAM_OW-1:0] spine_bot_sram_ow_b;
+
+	genvar r;
+	generate
+		for (r=0; r<N_SRAM_OW; r=r+1) begin : sram_rx
+`ifdef SIM
+			assign spine_top_sram_ow_b[r] = spine_top_sram_ow[r];
+			assign spine_bot_sram_ow_b[r] = spine_bot_sram_ow[r];
+`elsif FORMAL
+			assign spine_top_sram_ow_b[r] = spine_top_sram_ow[r];
+			assign spine_bot_sram_ow_b[r] = spine_bot_sram_ow[r];
+`else
+			if (|(SRAM_MASK & ODD_BRANCHES)) begin : top
+				(* keep *) gf180mcu_fd_sc_mcu7t5v0__buf_8 buf_I (.I (spine_top_sram_ow[r]), .Z (spine_top_sram_ow_b[r]));
+			end else begin : top_tie
+				assign spine_top_sram_ow_b[r] = 1'b0;
+			end
+			if (|(SRAM_MASK & EVEN_BRANCHES)) begin : bot
+				(* keep *) gf180mcu_fd_sc_mcu7t5v0__buf_8 buf_I (.I (spine_bot_sram_ow[r]), .Z (spine_bot_sram_ow_b[r]));
+			end else begin : bot_tie
+				assign spine_bot_sram_ow_b[r] = 1'b0;
+			end
+`endif
+		end
+	endgenerate
+
 	assign sram_ow = ctrl_ena
-		? (sram_sel_top ? spine_top_sram_ow :
-		   sram_sel_bot ? spine_bot_sram_ow : {N_SRAM_OW{1'b0}})
+		? (sram_sel_top ? spine_top_sram_ow_b :
+		   sram_sel_bot ? spine_bot_sram_ow_b : {N_SRAM_OW{1'b0}})
 		: {N_SRAM_OW{1'b0}};
 
 	genvar k;
@@ -310,10 +340,38 @@ module tt_top #(
 		end
 	end
 
-	// Named so the bank-select output can carry an antenna diode (below).
-	wire [`TT_SRAM_DATA-1:0] sram_q_sel = sram_bank_d ? sram_q_hi : sram_q_lo;
+	// Read-data drive. The read bus reaches every SRAM branch (32 tiles over
+	// several mm, ~4 pF per bit with four branches): left to synthesis it
+	// was one buf_2 per bit and a dffrnq_1 bank select driving 32 muxes,
+	// 40+ ns at 3.3V. So: a buffer on each select, a buf_16 per bit on the
+	// trunk, and a buf_8 per bit per SRAM branch (below).
+	wire sram_bank_b;
+	wire sram_cs_b;
+	wire [`TT_SRAM_DATA-1:0] sram_iw_pre;
 
-	assign sram_iw = sram_cs_d ? sram_q_sel : {`TT_SRAM_DATA{1'b0}};
+`ifdef SIM
+	assign sram_bank_b = sram_bank_d;
+	assign sram_cs_b   = sram_cs_d;
+	assign sram_iw     = sram_iw_pre;
+`elsif FORMAL
+	assign sram_bank_b = sram_bank_d;
+	assign sram_cs_b   = sram_cs_d;
+	assign sram_iw     = sram_iw_pre;
+`else
+	(* keep *) gf180mcu_fd_sc_mcu7t5v0__buf_8 sram_bank_buf_I (.I (sram_bank_d), .Z (sram_bank_b));
+	(* keep *) gf180mcu_fd_sc_mcu7t5v0__buf_8 sram_cs_buf_I   (.I (sram_cs_d),   .Z (sram_cs_b));
+	genvar q;
+	generate
+		for (q=0; q<`TT_SRAM_DATA; q=q+1) begin : sram_iw_buf
+			(* keep *) gf180mcu_fd_sc_mcu7t5v0__buf_16 buf_I (.I (sram_iw_pre[q]), .Z (sram_iw[q]));
+		end
+	endgenerate
+`endif
+
+	// Named so the bank-select output can carry an antenna diode (below).
+	wire [`TT_SRAM_DATA-1:0] sram_q_sel = sram_bank_b ? sram_q_hi : sram_q_lo;
+
+	assign sram_iw_pre = sram_cs_b ? sram_q_sel : {`TT_SRAM_DATA{1'b0}};
 
 	// Antenna protection for the SRAM inputs. The macro uses thin-oxide
 	// (3.3V) transistors and the foundry deck flagged the top-level wires
@@ -407,6 +465,24 @@ module tt_top #(
 
 			// The decode taps the spine select lines, which run the full
 			// chip height into small 5V gates here (ANT.16_ii, Metal2).
+			// A branch without SRAM support gets its sideband inputs tied
+			// low (see below); an SRAM branch gets its own buf_8 per read bit
+			// so each branch drives only its own run to its mux.
+			wire [N_SRAM_IW-1:0] l_sram_iw;
+			if (!SRAM_MASK[i]) begin : sram_iw_tie
+				assign l_sram_iw = {N_SRAM_IW{1'b0}};
+			end else begin : sram_iw_drv
+`ifdef SIM
+				assign l_sram_iw = sram_iw;
+`elsif FORMAL
+				assign l_sram_iw = sram_iw;
+`else
+				for (j=0; j<N_SRAM_IW; j=j+1) begin : b
+					(* keep *) gf180mcu_fd_sc_mcu7t5v0__buf_8 buf_I (.I (sram_iw[j]), .Z (l_sram_iw[j]));
+				end
+`endif
+			end
+
 `ifndef SIM
 `ifndef FORMAL
 			if (SRAM_MASK[i]) begin : sel_diode
@@ -416,15 +492,13 @@ module tt_top #(
 				end
 			end
 
-			// With several SRAM branches, each read-data bit is one net from
-			// the SRAM to every SRAM mux, and each request bit one spine net
-			// from every SRAM mux to the SRAM front end: long Metal3/Metal4
-			// runs into thick-gate inputs (ANT.16_ii). One diode per bit per
-			// branch, placed next to that branch's mux, protects each run.
+			// Each request bit is one spine net from every SRAM mux to the
+			// SRAM front end: long Metal3/Metal4 runs into thick-gate inputs
+			// (ANT.16_ii). One diode per bit per branch, next to that
+			// branch's mux, protects each run. (The read data needs none:
+			// each branch's run is driven by its own buf_8 above, whose
+			// output diffusion protects it.)
 			if (SRAM_MASK[i]) begin : sram_diode
-				for (j=0; j<N_SRAM_IW; j=j+1) begin : iw
-					(* keep *) gf180mcu_fd_sc_mcu7t5v0__antenna ant_I (.I (sram_iw[j]));
-				end
 				for (j=0; j<N_SRAM_OW; j=j+1) begin : ow
 					(* keep *) gf180mcu_fd_sc_mcu7t5v0__antenna ant_I (.I (l_sram_ow[j]));
 				end
@@ -438,9 +512,6 @@ module tt_top #(
 			// every input its own tie cell next to the pin: one l_k_zero net
 			// strung along the 1.4mm mux edge to 32 inputs failed the
 			// foundry antenna rule (ANT.16, thick-gate Metal3 ratio).
-			wire [N_SRAM_IW-1:0] l_sram_iw = SRAM_MASK[i]
-				? sram_iw
-				: {N_SRAM_IW{1'b0}};
 
 			// Branch Mux
 			(* blackbox *)

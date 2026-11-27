@@ -17,8 +17,9 @@ and on the foundry's own rule decks from the wafer.space precheck.
 | SRAM request bus when another project is selected | **floating** (random writes possible) | held at 0, request gated |
 | Routing DRC | 0 (by luck, last iteration) | 0, at 2 and 4 threads |
 | Global routing overflow | 1,257 (guides through tile obstructions) | 0, congestion disallowed |
-| Foundry antenna deck | 679 | **18** (8 on pad nets) |
-| Foundry DRC deck | 65,475 | **87** (13 in the core, see §6) |
+| Foundry antenna deck | 679 | **16** |
+| Foundry DRC deck | 65,475 | **85** (11 in the core, see §6) |
+| Top-level timing | **never checked** (Sky130 SDC: no clock on GF180) | 3.3 V STA of the SRAM path: ~50 MHz typical, ~25 MHz worst case (§8) |
 | SRAM read/write simulation | none | 512×32, both banks, byte masks: PASS from all 32 SRAM tiles |
 | Tiles that can use the SRAM | 8 (branch 11) | **32** (branches 3, 7, 11, 13; §7) |
 
@@ -144,20 +145,18 @@ Foundry decks from the wafer.space precheck (PDK `2fdf40d5`), run on the
 final `tt_gf_wrapper` GDS (unfilled; fill is floating and was checked
 separately: 0 shorts after fill).
 
-**DRC: 87** (was 65,475)
+**DRC: 85** (was 65,475)
 
 | Where | Rules | Count | Why |
 |---|---|---|---|
 | inside `gf180mcu_ws_ip__qrcode_id` | M3.2a/b, M4.2a/b | 65 | wafer.space's ID placeholder, replaced by their flow — not this design |
 | die edge | M3.2a, M4.2a | 9 | `fix_power_pins` leaves 0.1 µm between the template power pins and the `pad_raw` pins; depends on the pad-ring question (§5.1) |
-| core | M4.2a | 12 | Metal4 spacing at power-strap / mux-pin junctions |
-| core | NW.2a_LV | 1 | one N-well spacing spot between cells |
+| core | M4.2a | 11 | Metal4 spacing at power-strap / mux-pin junctions |
 
 The latch-up rules (DF.13/DF.14) that were open before are now 0.
 
-**Antenna: 18** (was 679). 8 are on `pad_raw` nets (protected by the pad
-cells' ESD diodes in the assembled chip); the rest are single Metal4 ratios
-on SRAM front-end and glue nets.
+**Antenna: 16** (was 679): single Metal4 ratios on pad and glue nets, one in
+the QR-code placeholder.
 
 **Density: 231 after the PDK fill** (was 87 before fill): 230 DCF.1a markers on
 the core's outer edge strips, where the pad ring attaches, and M4.4 (§5.4).
@@ -192,3 +191,44 @@ changed; only top-level routing and the branch-7 mux are new.
 Verified on the rebuilt chip: `make sim_sram` passes from all 32 tiles (and
 the 3 fault injections are still detected), both formal proofs pass, routing
 DRC 0, GDS short check 0, LVS clean.
+
+## 8. Timing at 3.3 V, and SRAM tiles in a real layout
+
+`signoff.sdc` names Sky130 `gpio_in[]` ports, which do not exist on GF180, so
+the tt_top sign-off STA had **no clock and checked no path** (slack 1e39), and
+it used the 5 V corners while the chip runs at 3.3 V. No project used the
+SRAM either, so the mux→SRAM-tile wiring had never been laid out.
+
+A test chip with one SRAM tile (hexa3/ttgf-sram-template) in each SRAM branch
+was built and timed at 3.3 V (`ol2/tt_top/sta_sram/`). It found:
+
+1. **SRAM tile template pins in the wrong order** — the 79 extra pins did not
+   follow the mux pin order, so the wires crossed between mux and tile and
+   global routing failed (overflow ~6300). Fixed in the template (pins at the
+   mux pin positions); test chip routes with overflow 0, DRC 0, LVS clean.
+2. **Read-data bus undriven** — each read bit was one ~4 pF net to all SRAM
+   branches from a `buf_2`, and the bank select a `dffrnq_1` into 32 muxes:
+   −39 ns setup at 3.3 V slow. Now: `buf_8` on bank/cs select, `buf_16` per bit
+   on the trunk, `buf_8` per bit per SRAM branch.
+3. **Spine request bus into a weak gate** — 8 ns in a `nand4_1`; now buffered
+   (`buf_8`) where it enters tt_top. The SRAM tile buffers its outputs.
+4. **Power router**: VDD/VGND riser pads at a shared row boundary ended up
+   0.25 µm apart (M4.2a); different-net clearance now covers riser ends.
+
+Result (4 SRAM tiles, 20 ns):
+
+| Corner | Request setup | Read-data setup | Read-data hold |
+|---|---|---|---|
+| ss 125 °C 3.0 V | −16.8 ns | +4.4 ns | +0.08 ns |
+| tt 25 °C 3.3 V | +1.5 ns | +12.2 ns | −0.01 ns |
+| ff −40 °C 3.6 V | +9.2 ns | +15.4 ns | −0.09 ns |
+
+So the SRAM interface runs at **~50 MHz typical and ~25 MHz worst case**. What
+remains is architectural: the tile clock arrives ~8 ns after the SRAM clock
+(pad → spine → mux) and the request spends ~10.5 ns in tt_mux. Hold is against
+an ideal SRAM (zero clk→q): any real access time > 0.1 ns covers it. The
+Arrakeen SRAM has **no timing model**, so its own address setup and read
+access time come on top of these numbers.
+
+Still open: the rest of tt_top is not constrained on GF180 (`signoff.sdc`
+needs a GF180 rewrite), and tt_top's flow still uses the 5 V corners.

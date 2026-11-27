@@ -1,0 +1,33 @@
+/* IDEAL placeholder for the Arrakeen SRAM: zero setup, hold and clk->q.
+   STA slack against it = the window the real macro must fit in. */
+library(SP6TSRAM256x32_ideal) {
+  delay_model : table_lookup; time_unit : "1ns"; voltage_unit : "1V"; current_unit : "1mA";
+  capacitive_load_unit(1,pf); pulling_resistance_unit : "1kohm"; leakage_power_unit : "1nW";
+  nom_voltage : 3.3; nom_temperature : 25; nom_process : 1;
+  input_threshold_pct_rise : 50; input_threshold_pct_fall : 50; output_threshold_pct_rise : 50; output_threshold_pct_fall : 50;
+  slew_lower_threshold_pct_rise : 20; slew_upper_threshold_pct_rise : 80; slew_lower_threshold_pct_fall : 20; slew_upper_threshold_pct_fall : 80;
+  type(bus8) { base_type : array; data_type : bit; bit_width : 8; bit_from : 7; bit_to : 0; downto : true; }
+  type(bus32) { base_type : array; data_type : bit; bit_width : 32; bit_from : 31; bit_to : 0; downto : true; }
+  type(bus4) { base_type : array; data_type : bit; bit_width : 4; bit_from : 3; bit_to : 0; downto : true; }
+  cell(SP6TSRAM256x32) {
+    area : 1;
+    pin(clk) { direction : input; clock : true; capacitance : 0.01; }
+    bus(a) { bus_type : bus8; direction : input; capacitance : 0.01;
+      timing() { related_pin : "clk"; timing_type : setup_rising; rise_constraint(scalar) { values("0"); } fall_constraint(scalar) { values("0"); } }
+      timing() { related_pin : "clk"; timing_type : hold_rising; rise_constraint(scalar) { values("0"); } fall_constraint(scalar) { values("0"); } }
+    }
+    bus(d) { bus_type : bus32; direction : input; capacitance : 0.01;
+      timing() { related_pin : "clk"; timing_type : setup_rising; rise_constraint(scalar) { values("0"); } fall_constraint(scalar) { values("0"); } }
+      timing() { related_pin : "clk"; timing_type : hold_rising; rise_constraint(scalar) { values("0"); } fall_constraint(scalar) { values("0"); } }
+    }
+    bus(we) { bus_type : bus4; direction : input; capacitance : 0.01;
+      timing() { related_pin : "clk"; timing_type : setup_rising; rise_constraint(scalar) { values("0"); } fall_constraint(scalar) { values("0"); } }
+      timing() { related_pin : "clk"; timing_type : hold_rising; rise_constraint(scalar) { values("0"); } fall_constraint(scalar) { values("0"); } }
+    }
+    bus(q) { bus_type : bus32; direction : output;
+      timing() { related_pin : "clk"; timing_type : rising_edge;
+        cell_rise(scalar) { values("0"); } cell_fall(scalar) { values("0"); }
+        rise_transition(scalar) { values("0.2"); } fall_transition(scalar) { values("0.2"); } }
+    }
+  }
+}
