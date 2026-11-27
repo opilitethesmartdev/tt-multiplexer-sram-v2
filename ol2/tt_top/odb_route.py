@@ -1215,6 +1215,7 @@ class MacroPowerVias:
 
 		self.reasons = {'no_stripe': 0, 'too_small': 0, 'claimed': 0,
 			'jogged': 0, 'strapped': 0}
+		self._pin_obs = None
 
 		# Vias already on these nets: pdngen's macro arrays and ring/stripe
 		# vias, ModulePowerStrapper's gated-domain straps, StdCellPower's
@@ -1413,12 +1414,26 @@ class MacroPowerVias:
 			if ye <= ys:
 				continue
 
+			# The strap leaves the pin and crosses the macro's edge margin,
+			# where the macro's signal pins sit; a 0.8um strap ran 0.13um
+			# from one (M4.2a). Only use a column that keeps clear of every
+			# foreign Metal4 pin and special wire.
+			if self._pin_obs is None:
+				self._pin_obs = [o for o in self._collect_m4_obstacles()
+					if o[0] is not None]
+			strap = (x - w // 2, ys, x + w // 2, ye)
+			if not self._clear_of(net.getName(), strap, self._pin_obs,
+					(300 * self.dbu) // 1000):
+				self.reasons['jogged'] += 1
+				continue
+
 			sw = odb.dbSWire.create(net, "ROUTED")
 			odb.createSBoxes(sw, self.m4, [
-				odb.Rect(x - w // 2, ys, x + w // 2, ye),
+				odb.Rect(*strap),
 			], "STRIPE")
 			odb.createSBoxes(sw, self.v45.get(1, 1),
 				[odb.Point(x, ycs)], "STRIPE")
+			self._pin_obs.append((net.getName(),) + strap)
 			self.reasons['strapped'] += 1
 			return 1
 		return self._tie_neighbour(net, rects)
@@ -1916,71 +1931,39 @@ class WellTaps:
 
 			row_taps = [bb.xMin() for inst, bb in items
 				if inst.getMaster().getName().endswith('filltie')]
+			site = self.site_w
+
+			def end_covered(t, e):
+				return abs(t + half - e) <= reach
+
 			for inst, bb in logic:
-				# A tap already in reach covers the cell: one tap per logic
-				# cell used up the free sites the remaining cells needed.
-				if any(covers(t, bb) for t in row_taps):
-					continue
-				placed = None
-				for x in (bb.xMax(), bb.xMin() - width):
-					if free(x):
-						placed = x
-						break
-				if placed is None:
-					# No free site right next to the cell: any free site
-					# within ~15um of it in the same row still satisfies the
-					# tap distance rules (DF.13/DF.14, ~20um for MV). Cells
-					# that were left untapped are a latch-up risk and the
-					# foundry deck flags them.
-					site = self.site_w
+				# Both ends of the cell must be in reach of a tap: a 20um
+				# flip-flop with one abutting tap still has P-diffusion ~19um
+				# away at its far end (DF.13_MV is 15um). Add a tap on each
+				# side that is not covered, abutting if possible.
+				for e, abut in ((bb.xMin(), bb.xMin() - width),
+						(bb.xMax(), bb.xMax())):
+					if any(end_covered(t, e) for t in row_taps):
+						continue
+					placed = None
+					cands = [abut]
 					for k in range(1, reach // site + 1):
-						for x in (bb.xMax() + k * site,
-								bb.xMin() - width - k * site):
-							if free(x) and covers(x, bb):
-								placed = x
-								break
-						if placed is not None:
+						cands += [abut - k * site, abut + k * site]
+					for x in cands:
+						if free(x) and end_covered(x, e):
+							placed = x
 							break
-					# Fallback for packed rows: nearest free site within 15um
-					# of the cell edge (may leave a far diffusion just out of
-					# DF.13/DF.14 reach; the foundry deck reports those).
-					for k in range(1, int(15.0 * self.dbu) // site + 1):
-						if placed is not None:
-							break
-						for x in (bb.xMax() + k * site,
-								bb.xMin() - width - k * site):
-							if free(x):
-								placed = x
-								break
-				if placed is None:
-					n_skip += 1
-					continue
-
-				name = f'TAP_WELL_{n_taps:d}'
-				try:
-					try:
-						tap = odb.dbInst.create(self.block, self.master, name)
-					except AttributeError:
-						tap = odb.dbInst_create(self.block, self.master, name)
-				except Exception as e:  # noqa: BLE001
-					print(f'WellTaps: cannot create instances ({e!r}), skipping')
-					return
-				if tap is None:
-					print(f'WellTaps: could not create {name}, stopping')
-					n_skip += 1
-					break
-				try:
-					tap.setOrient(inst.getOrient())
-				except Exception:  # noqa: BLE001 - keep the default orientation
-					pass
-				tap.setLocation(placed, y)
-				tap.setPlacementStatus('FIRM')
-				self._connect(tap, net_vdd, net_vss)
-
-				# Account for the new cell in this row's occupancy.
-				occ.append((placed, placed + width))
-				row_taps.append(placed)
-				n_taps += 1
+					if placed is None:
+						n_skip += 1
+						continue
+					tap = self._make_tap(f'TAP_WELL_{n_taps:d}', placed, y,
+						inst.getOrient(), net_vdd, net_vss)
+					if tap is None:
+						n_skip += 1
+						continue
+					occ.append((placed, placed + width))
+					row_taps.append(placed)
+					n_taps += 1
 
 		print(f'WellTaps: {n_taps} taps inserted, {n_skip} logic cells '
 			f'without a free site in tap reach')
@@ -1990,6 +1973,23 @@ class WellTaps:
 		if n_skip:
 			print(f'WellTaps: WARNING {n_skip} logic cells have no well tap '
 				f'within reach (DF.13/DF.14, latch-up risk)')
+
+	def _make_tap(self, name, x, y, orient, net_vdd, net_vss):
+		try:
+			tap = odb.dbInst_create(self.block, self.master, name)
+		except Exception as e:  # noqa: BLE001
+			print(f'WellTaps: cannot create {name} ({e!r})')
+			return None
+		if tap is None:
+			return None
+		try:
+			tap.setOrient(orient)
+		except Exception:  # noqa: BLE001 - keep the default orientation
+			pass
+		tap.setLocation(x, y)
+		tap.setPlacementStatus('FIRM')
+		self._connect(tap, net_vdd, net_vss)
+		return tap
 
 	FILLERS = [(64, 'gf180mcu_fd_sc_mcu7t5v0__fill_64'),
 		(32, 'gf180mcu_fd_sc_mcu7t5v0__fill_32'),
@@ -2055,6 +2055,74 @@ class WellTaps:
 						x += w * site
 						left -= w
 						n += 1
+		return n + self._pad_short_runs(masters, blocks + macros, net_vdd,
+			net_vss)
+
+	MIN_RUN_SITES = 16
+
+	def _pad_short_runs(self, masters, keepout, net_vdd, net_vss):
+		"""Lengthen very short cell runs with fillers.
+
+		A lone cell plus its tap (2-4um) gives StdCellPower a rail with room
+		for one riser lane only, and the vdpwr and vgnd risers need a lane
+		of clearance from each other, so one of the two rails stayed
+		unpowered. Extend such runs to MIN_RUN_SITES with fillers into free
+		sites on either side.
+		"""
+		site = self.site_w
+		rows = {}
+		for inst in self.block.getInsts():
+			if not inst.getMaster().getName().startswith('gf180mcu_fd_sc_'):
+				continue
+			bb = inst.getBBox()
+			rows.setdefault(bb.yMin(), []).append(
+				(bb.xMin(), bb.xMax(), bb.yMax(), inst.getOrient()))
+		one = [m for w, m in masters if w == 1]
+		if not one:
+			return 0
+		one = one[0]
+		n = 0
+		for y, cells in rows.items():
+			cells.sort()
+			runs = []
+			for c in cells:
+				if runs and c[0] <= runs[-1][1]:
+					runs[-1][1] = max(runs[-1][1], c[1])
+				else:
+					runs.append([c[0], c[1], c[2], c[3]])
+			for i, (x0, x1, ytop, orient) in enumerate(runs):
+				need = self.MIN_RUN_SITES - (x1 - x0) // site
+				if need <= 0:
+					continue
+				lim_r = runs[i + 1][0] if i + 1 < len(runs) else None
+				lim_l = runs[i - 1][1] if i > 0 else None
+
+				def ok(xa):
+					xb = xa + site
+					if lim_r is not None and xb > lim_r:
+						return False
+					if lim_l is not None and xa < lim_l:
+						return False
+					return not any(k.xMin() < xb and k.xMax() > xa and
+						k.yMin() < ytop and k.yMax() > y for k in keepout)
+
+				xr, xl = x1, x0
+				while need > 0:
+					if ok(xr):
+						xa = xr
+						xr += site
+					elif ok(xl - site):
+						xl -= site
+						xa = xl
+					else:
+						break
+					f = odb.dbInst_create(self.block, one, f'FILL_RUN_{n:d}')
+					f.setOrient(orient)
+					f.setLocation(xa, y)
+					f.setPlacementStatus('FIRM')
+					self._connect(f, net_vdd, net_vss)
+					need -= 1
+					n += 1
 		return n
 
 
@@ -2523,11 +2591,15 @@ class StdCellPower:
 			if kmax < 0:
 				kmax = 0
 			k0 = kmax // 2
+			# Candidates walk outwards from the middle of the rail. Keep them
+			# on the rail: k0 - d went negative on short rails and put the
+			# via stack off the end of the strip, on bare substrate, so the
+			# rail looked powered but was not (LVS: TAP_WELL_n/VDD island).
 			ks = []
 			for d in range(0, kmax + 1):
-				ks.append(k0 + d)
-				if d:
-					ks.append(k0 - d)
+				for k in ((k0 + d,) if d == 0 else (k0 + d, k0 - d)):
+					if 0 <= k <= kmax:
+						ks.append(k)
 
 			# Try the nearest stripes first; a farther stripe is sometimes the
 			# only one reachable without crossing a macro row.
@@ -2631,10 +2703,12 @@ class StdCellPower:
 		if n_skipped:
 			dbu = self.reader.block.getDbUnitsPerMicron()
 			for net_name, x0, y0, x1, y1 in unpowered:
-				cells = [i.getName() for i in self.reader.block.getInsts()
-					if i.getMaster().getName().startswith('gf180mcu_fd_sc_')
-					and i.getBBox().xMin() < x1 and i.getBBox().xMax() > x0
-					and i.getBBox().yMin() <= y1 and i.getBBox().yMax() >= y0]
+				cells = [i.getName() + ':' + i.getMaster().getName().replace(
+						'gf180mcu_fd_sc_mcu7t5v0__', '')
+					for i in self.reader.block.getInsts()
+					if i.getBBox().xMin() <= x1 and i.getBBox().xMax() >= x0
+					and i.getBBox().yMin() <= y1 + 400
+					and i.getBBox().yMax() >= y0 - 400]
 				print(f'StdCellPower: unpowered {net_name} rail '
 					f'({x0/dbu:.2f},{y0/dbu:.2f})-({x1/dbu:.2f},{y1/dbu:.2f}) '
 					f'cells: {cells[:6]}')

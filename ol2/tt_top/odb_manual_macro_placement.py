@@ -53,18 +53,23 @@ def gridify(value, grid):
 # them. StdCellPower additionally refuses any via within 0.3um of a macro
 # and fails the run if a rail is left unpowered.
 MACRO_HALO = (2.0, 2.0)  # (x, y) in um
+# The SRAMs get a wider side halo: their antenna diodes were pulled into the
+# narrow strip right beside the macro, where no power riser can reach a
+# stripe (StdCellPower then refuses the run).
+MACRO_HALO_BY_MASTER = {"SP6TSRAM256x32": (10.0, 2.0)}
 STDCELL_PREFIX = "gf180mcu_fd_sc_"
 
 
 def add_macro_halos(reader):
     dbu = reader.block.getDbUnitsPerMicron()
-    hx, hy = int(MACRO_HALO[0] * dbu), int(MACRO_HALO[1] * dbu)
     n = 0
     for inst in reader.block.getInsts():
         if inst.getMaster().getName().startswith(STDCELL_PREFIX):
             continue
         if not inst.isPlaced():
             continue
+        halo = MACRO_HALO_BY_MASTER.get(inst.getMaster().getName(), MACRO_HALO)
+        hx, hy = int(halo[0] * dbu), int(halo[1] * dbu)
         bb = inst.getBBox()
         # A dbBlockage is a hard placement blockage unless marked soft.
         odb.dbBlockage_create(

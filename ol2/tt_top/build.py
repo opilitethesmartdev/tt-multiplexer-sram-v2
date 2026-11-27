@@ -1130,6 +1130,14 @@ if __name__ == '__main__':
 		"FP_PDN_CORE_RING_VSPACING" :  2.0,
 		"FP_PDN_CORE_RING_HSPACING" :  2.0,
 
+		# Placement: leave 2 free sites on each side of every cell. With no
+		# padding the placer packed 20um flip-flops edge to edge, so the cells
+		# inside such a run had no free site within well-tap reach
+		# (DF.13/DF.14, latch-up rule); WellTaps puts a tap (2 sites) into
+		# these gaps and fills the rest with fillers.
+		"GPL_CELL_PADDING"      : 4,
+		"DPL_CELL_PADDING"      : 4,
+
 		# Routing
 		# Global routing must produce a legal plan. With congestion allowed
 		# and the default 30% track reserve, the ~12um channel between
