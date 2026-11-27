@@ -17,9 +17,10 @@ and on the foundry's own rule decks from the wafer.space precheck.
 | SRAM request bus when another project is selected | **floating** (random writes possible) | held at 0, request gated |
 | Routing DRC | 0 (by luck, last iteration) | 0, at 2 and 4 threads |
 | Global routing overflow | 1,257 (guides through tile obstructions) | 0, congestion disallowed |
-| Foundry antenna deck | 679 | **12** (4 on pad nets) |
-| Foundry DRC deck | 65,475 | **135** (73 in this design, see §6) |
-| SRAM read/write simulation | none | 512×32, both banks, byte masks: PASS |
+| Foundry antenna deck | 679 | **18** (8 on pad nets) |
+| Foundry DRC deck | 65,475 | **87** (13 in the core, see §6) |
+| SRAM read/write simulation | none | 512×32, both banks, byte masks: PASS from all 32 SRAM tiles |
+| Tiles that can use the SRAM | 8 (branch 11) | **32** (branches 3, 7, 11, 13; §7) |
 
 ## 1. Defects that could break chips
 
@@ -55,8 +56,8 @@ and special wiring.
 ### 1.3 SRAM request bus floating
 
 Each SRAM-capable mux drives the spine's SRAM bus through tri-state buffers
-enabled only while its branch is selected. Only branch 11 has SRAM on this
-chip, so whenever any other project was selected the bus floated — straight
+enabled only while its branch is selected. Originally only branch 11 had SRAM
+on this chip, so whenever any other project was selected the bus floated — straight
 into the SRAM chip-select / write-enable / address / data logic and the SRAM's
 address pins (random writes, floating CMOS inputs). Synthesis had also
 optimised the side-select away because the bottom spine bus has no driver.
@@ -88,10 +89,12 @@ while no SRAM branch on that side is selected.
   supply-to-supply shorts, signals merged into a supply, and non-supply macro
   pins on a supply. It reports both shorts above on the old GDS and none now.
   It never reads or edits a netlist, so netlist repairs cannot mask it.
-* **`make sim_sram`**: a self-checking BIST tile in branch 11 writes and reads
-  all 512 words through the real `tt_mux`/`tt_ctrl`/`tt_top` RTL, then selects
-  a different project and checks the SRAM bus stays at 0 and the contents do
-  not change. Three fault injections (q[22] stuck low, bank select stuck,
+* **`make sim_sram`**: a self-checking BIST tile in every one of the 32
+  SRAM-capable slots (§7) is selected in turn and writes and reads all 512
+  words through the real `tt_mux`/`tt_ctrl`/`tt_top` RTL (memory scrambled
+  through a backdoor before each tile, so stale data cannot pass). Then a
+  different project is selected and the SRAM bus must stay at 0 and the
+  contents must not change. Three fault injections (q[22] stuck low, bank select stuck,
   decode stuck selected) must and do fail.
 * StdCellPower and WellTaps report every unpowered rail / untapped cell.
 
@@ -117,8 +120,10 @@ while no SRAM branch on that side is selected.
    (`tt_gf_wrapper`, 3166×4766 µm) but expects a full slot-sized chip with seal
    ring and pad ring (3932×5122 µm, origin at 0,0). It cannot pass until it
    runs on the assembled chip.
-3. **No project uses the SRAM.** All tiles have `uses_sram: false`. Only
-   branch 11 can reach the SRAM (the other SRAM branches 5/7/15 are masked).
+3. **No project uses the SRAM yet.** All tiles have `uses_sram: false`.
+   32 slots can now reach it (§7); the template
+   [hexa3/ttgf-sram-template](https://github.com/hexa3/ttgf-sram-template)
+   builds a tile with the SRAM pins.
 4. **Metal4 coverage (M4.4, needs > 30 %).** After the PDK fill it is about
    23 %: the fill script will not put dummy Metal4 under the dense Metal5 PDN
    stripes (foundry guideline DM.4–DM.7, not enforced by the deck). Either
@@ -139,19 +144,20 @@ Foundry decks from the wafer.space precheck (PDK `2fdf40d5`), run on the
 final `tt_gf_wrapper` GDS (unfilled; fill is floating and was checked
 separately: 0 shorts after fill).
 
-**DRC: 135** (was 65,475)
+**DRC: 87** (was 65,475)
 
-| Rule | Count | Where / why |
-|---|---|---|
-| M3.2a / M3.2b / M4.2a / M4.2b | 44 | inside `gf180mcu_ws_ip__qrcode_id`, wafer.space's ID placeholder that their precheck replaces — not this design |
-| M3.2a | 18 | die edge: `fix_power_pins` leaves 0.1 µm between the template power pins and the `pad_raw` pins; depends on the pad-ring question (§5.1) |
-| DF.13_MV / DF.14_MV | 30 | cells in densely packed rows still beyond 15 µm of a well/substrate tap (latch-up rule) — WellTaps warns about them |
-| M4.2a | 40 | remaining Metal4 spacing at power-strap / mux-pin junctions |
-| NP.2 / NW.2a_LV / DV.5 | 3 | single implant/well spacing spots between cells |
+| Where | Rules | Count | Why |
+|---|---|---|---|
+| inside `gf180mcu_ws_ip__qrcode_id` | M3.2a/b, M4.2a/b | 65 | wafer.space's ID placeholder, replaced by their flow — not this design |
+| die edge | M3.2a, M4.2a | 9 | `fix_power_pins` leaves 0.1 µm between the template power pins and the `pad_raw` pins; depends on the pad-ring question (§5.1) |
+| core | M4.2a | 12 | Metal4 spacing at power-strap / mux-pin junctions |
+| core | NW.2a_LV | 1 | one N-well spacing spot between cells |
 
-**Antenna: 12** (was 679). 4 are on `pad_raw` nets (protected by the pad
-cells' ESD diodes in the assembled chip); 8 are thick-gate Metal2/Metal3
-ratios on individual glue nets and one spine select line.
+The latch-up rules (DF.13/DF.14) that were open before are now 0.
+
+**Antenna: 18** (was 679). 8 are on `pad_raw` nets (protected by the pad
+cells' ESD diodes in the assembled chip); the rest are single Metal4 ratios
+on SRAM front-end and glue nets.
 
 **Density: 231 after the PDK fill** (was 87 before fill): 230 DCF.1a markers on
 the core's outer edge strips, where the pad ring attaches, and M4.4 (§5.4).
@@ -159,3 +165,30 @@ the core's outer edge strips, where the pad ring attaches, and M4.4 (§5.4).
 **Magic DRC** in the precheck is advisory (`ERROR_ON_MAGIC_DRC: False` in
 wafer.space's own precheck); its notch reports dropped with the fixes above.
 
+
+## 7. 32 SRAM-capable tiles
+
+Originally `TT_SRAM_MASK` listed branches 5, 7, 11 and 15, but only 11 had a
+mux: 5 and 7 were masked as analog groups inherited from the Sky130 config
+(GF180 has no analog switches, so they had no function) and 15 is reserved by
+Hack Club for huge modules. So only 8 tiles could use the SRAM.
+
+Now `cfg.tt.sram.branches` is **3, 7, 11, 13** — 4 branches × 8 blocks = 32
+tiles, all odd branches, so they share the top SRAM bus spine:
+
+| Branch | Tiles (x, rows) | Change |
+|---|---|---|
+| 3 | x 4–7, rows 8–9 | SRAM sideband added |
+| 7 | x 4–7, rows 10–11 | analog group removed → new mux, SRAM sideband |
+| 11 | x 4–7, rows 12–13 | unchanged |
+| 13 | x 0–3, rows 14–15 | SRAM sideband added |
+
+Branch 5 stays without a mux: the 4×4 SRAM block (x 0–3, rows 9–12) sits on
+it, and the placer requires the mux facing a 4-high block to be absent. 15 is
+left to Hack Club's huge-module reservation. Masks: `TT_SRAM_MASK` 0x2888,
+`TT_MUX_MASK` 0x9430. Every mux already has the SRAM ports, so no macro
+changed; only top-level routing and the branch-7 mux are new.
+
+Verified on the rebuilt chip: `make sim_sram` passes from all 32 tiles (and
+the 3 fault injections are still detected), both formal proofs pass, routing
+DRC 0, GDS short check 0, LVS clean.

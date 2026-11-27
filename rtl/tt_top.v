@@ -415,6 +415,20 @@ module tt_top #(
 					(* keep *) gf180mcu_fd_sc_mcu7t5v0__antenna ant_I (.I (l_spine_iw[j]));
 				end
 			end
+
+			// With several SRAM branches, each read-data bit is one net from
+			// the SRAM to every SRAM mux, and each request bit one spine net
+			// from every SRAM mux to the SRAM front end: long Metal3/Metal4
+			// runs into thick-gate inputs (ANT.16_ii). One diode per bit per
+			// branch, placed next to that branch's mux, protects each run.
+			if (SRAM_MASK[i]) begin : sram_diode
+				for (j=0; j<N_SRAM_IW; j=j+1) begin : iw
+					(* keep *) gf180mcu_fd_sc_mcu7t5v0__antenna ant_I (.I (sram_iw[j]));
+				end
+				for (j=0; j<N_SRAM_OW; j=j+1) begin : ow
+					(* keep *) gf180mcu_fd_sc_mcu7t5v0__antenna ant_I (.I (l_sram_ow[j]));
+				end
+			end
 `endif
 `endif
 
