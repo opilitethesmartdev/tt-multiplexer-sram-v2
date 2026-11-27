@@ -94,10 +94,10 @@ sim/tt_user_module_sram.v: rtl/tt_user_module.v.mak sim/modules_sram_sim.yaml
 
 sim_sram: rtl/tt_defs.vh $(SRAM_SIM_SRC) $(SRAM_SIM_RTL)
 	$(IVERILOG) -g2012 -DSIM -Irtl -o sim/tt_sram_tb $(SRAM_SIM_RTL) $(SRAM_SIM_SRC)
-	cd sim && vvp -n tt_sram_tb | tee tt_sram_tb.log && grep -q '^PASS' tt_sram_tb.log
-	for f in INJECT_Q22_SHORT INJECT_BANK_STUCK; do \
+	cd sim && vvp -n tt_sram_tb | tee tt_sram_tb.log && grep -q '^ALL PASS' tt_sram_tb.log
+	for f in INJECT_Q22_SHORT INJECT_BANK_STUCK INJECT_SEL_STUCK; do \
 		$(IVERILOG) -g2012 -DSIM -D$$f -Irtl -o sim/tt_sram_tb_$$f $(SRAM_SIM_RTL) $(SRAM_SIM_SRC) && \
-		(cd sim && ! vvp -n tt_sram_tb_$$f | grep -q '^PASS') && echo "$$f correctly detected" || exit 1; \
+		(cd sim && ! vvp -n tt_sram_tb_$$f | grep -q '^ALL PASS') && echo "$$f correctly detected" || exit 1; \
 	done
 
 .PHONY: sim_sram

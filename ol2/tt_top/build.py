@@ -869,6 +869,10 @@ class TopFlow(SequentialFlow):
 		CustomRoute,
 		OpenROAD.GlobalRouting,
 		OpenROAD.DetailedRouting,
+		# Report OpenROAD's own antenna count. Note its LEF-based model
+		# under-counts against the foundry deck (no thick/thin gate split);
+		# the foundry antenna deck in the wafer.space precheck is the gate.
+		OpenROAD.CheckAntennas,
 		Checker.TrDRC,
 		Odb.ReportDisconnectedPins,
 		Checker.DisconnectedPins,
@@ -1145,7 +1149,10 @@ if __name__ == '__main__':
 		# The detailed router ran single threaded (~13 min); GitHub runners
 		# have 4 cores.
 		"ROUTING_CORES"         : 4,
-		"GRT_REPAIR_ANTENNAS"   : False,
+		# Antenna: OpenROAD.RepairAntennas cannot run here (the custom
+		# pre-routes make it treat the design as detail-routed, and its
+		# parasitics estimate then fails), and its LEF model misses most of
+		# what the foundry deck reports.
 		"DRT_ANTENNA_REPAIR_ITERS" : 0,
 		# A healthy run terminates on its own once there are no violations
 		# left. The last remaining defect is one module<->mux net that the

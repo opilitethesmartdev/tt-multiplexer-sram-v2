@@ -336,20 +336,50 @@ class Router:
 				encoder = odb.dbWireEncoder()
 				encoder.begin(wire)
 
-				# Collect all ITerms positions
-				it_pos = [ it.getAvgXY()[1:] for it in k0_net.getITerms() ]
-				it_pos.sort()
+				# Collect all ITerms positions, with the pin rectangle on the
+				# strap layer for each
+				hw = layer.getWidth() // 2
+				it_pos = []
+				for it in k0_net.getITerms():
+					px, py = it.getAvgXY()[1:]
+					pin = None
+					for geom in it.getGeometries():
+						gl, gr = geom[0], geom[1]
+						if hasattr(gl, 'getName') and \
+								gl.getName() == layer.getName():
+							pin = gr
+							break
+					it_pos.append((px, py, pin))
+				it_pos.sort(key=lambda t: (t[0], t[1]))
 
 				# Horizontal strap spanning all ITerms
 				encoder.newPath(layer, 'FIXED')
-				encoder.addPoint(min([px for px, py in it_pos]), sy)
-				encoder.addPoint(max([px for px, py in it_pos]), sy)
+				encoder.addPoint(min([t[0] for t in it_pos]), sy)
+				encoder.addPoint(max([t[0] for t in it_pos]), sy)
 
 				# Vertical segment from the strap down to each ITerm
-				for px, py in it_pos:
+				for px, py, pin in it_pos:
 					encoder.newPath(layer, 'FIXED')
 					encoder.addPoint(px, sy)
 					encoder.addPoint(px, py)
+					# The stub is a default-width (0.28um) wire but the mux
+					# pins are 0.30um wide, so every stub/pin junction left
+					# 0.01um steps that the foundry deck flags as Metal4
+					# spacing (M4.2a, ~11k across the die). Add a patch
+					# exactly as wide as the pin, from the strap edge into the
+					# pin, as part of the same wire (special wiring on a
+					# signal net is not written to the DEF).
+					if pin is not None:
+						inset = min(400, pin.yMax() - pin.yMin())
+						if pin.yMin() >= sy:
+							y0, y1 = sy - hw, pin.yMin() + inset
+						elif pin.yMax() <= sy:
+							y0, y1 = pin.yMax() - inset, sy + hw
+						else:
+							y0 = y1 = None
+						if y0 is not None:
+							encoder.addRect(pin.xMin() - px, y0 - py,
+								pin.xMax() - px, y1 - py)
 
 				# End routing
 				encoder.end()
@@ -764,6 +794,11 @@ class ViaGenerator:
 				self.cut_spc[0] -= self.cut_sz[0]
 				self.cut_spc[1] -= self.cut_sz[1]
 
+				# Vn.2b: 0.36um between cuts of a 4x4 or larger array
+				big = (360 * reader.block.getDbUnitsPerMicron()) // 1000
+				self.cut_spc_big = [max(self.cut_spc[0], big),
+					max(self.cut_spc[1], big)]
+
 			# Or Metal ?
 			elif ly.getType() == 'ROUTING':
 				enc = ly_rule.getEnclosure()
@@ -781,10 +816,12 @@ class ViaGenerator:
 		self.top_ly  = met[1][1]
 		self.top_enc = met[1][2]
 
-	def create(self, ncols, nrows, name=None):
+	def create(self, ncols, nrows, name=None, big=False):
 		# Create via
+		spc = self.cut_spc_big if big else self.cut_spc
 		if name is None:
-			name = f'vg_{(hash(self) & 0xffffffff):08x}_{ncols:d}x{nrows:d}'
+			name = f'vg_{(hash(self) & 0xffffffff):08x}_{ncols:d}x{nrows:d}' + \
+				('_w' if big else '')
 
 		v = odb.dbVia.create(self.reader.block, name)
 
@@ -803,8 +840,8 @@ class ViaGenerator:
 		vp.setNumCutRows(nrows)
 		vp.setXCutSize(self.cut_sz[0])
 		vp.setYCutSize(self.cut_sz[1])
-		vp.setXCutSpacing(self.cut_spc[0])
-		vp.setYCutSpacing(self.cut_spc[1])
+		vp.setXCutSpacing(spc[0])
+		vp.setYCutSpacing(spc[1])
 		vp.setXBottomEnclosure(self.bot_enc[0])
 		vp.setYBottomEnclosure(self.bot_enc[1])
 		vp.setXTopEnclosure(self.top_enc[0])
@@ -815,44 +852,60 @@ class ViaGenerator:
 		# Done
 		return v
 
-	def get(self, ncols, nrows):
-		k = (ncols, nrows)
+	def get(self, ncols, nrows, big=False):
+		k = (ncols, nrows, big)
 		if k not in self.vias:
-			self.vias[k] = self.create(ncols, nrows)
+			self.vias[k] = self.create(ncols, nrows, big=big)
 		return self.vias[k]
+
+	def _array(self, count):
+		"""Pick the cut array for counts computed by count(spacing).
+
+		GF180 Vn.2b: cuts in a 4x4 or larger array need 0.36um spacing
+		instead of the single-cut Vn.2a value. Re-size with the wide
+		spacing; if that no longer gives a 4x4+ array, keep the normal
+		spacing but cap the smaller side at 3 cuts (a 3xN array is legal).
+		"""
+		ncols, nrows = count(self.cut_spc)
+		if (ncols <= 0) or (nrows <= 0):
+			return None
+		if ncols >= 4 and nrows >= 4:
+			bc, br = count(self.cut_spc_big)
+			if bc >= 4 and br >= 4:
+				return self.get(bc, br, big=True)
+			if ncols <= nrows:
+				ncols = 3
+			else:
+				nrows = 3
+		return self.get(ncols, nrows)
 
 	def get4sz(self, vw, vh):
 		# Compute row / columns
-		ncols = (vw // (self.cut_sz[0] + self.cut_spc[0])) - 1
-		nrows = (vh // (self.cut_sz[1] + self.cut_spc[1])) - 1
-		return self.get(ncols, nrows)
+		def count(spc):
+			return ((vw // (self.cut_sz[0] + spc[0])) - 1,
+				(vh // (self.cut_sz[1] + spc[1])) - 1)
+		return self._array(count)
 
 	def get4sz_ext(self, vw, vh, bot_fit='xy', top_fit='xy'):
-		# Constraints
-		ncols = []
-		nrows = []
+		def count(spc):
+			ncols = []
+			nrows = []
 
-		if 'x' in bot_fit:
-			ncols.append( (vw - 2 * self.bot_enc[0] + self.cut_spc[0]) // (self.cut_sz[0] + self.cut_spc[0]) )
+			if 'x' in bot_fit:
+				ncols.append( (vw - 2 * self.bot_enc[0] + spc[0]) // (self.cut_sz[0] + spc[0]) )
 
-		if 'x' in top_fit:
-			ncols.append( (vw - 2 * self.top_enc[0] + self.cut_spc[0]) // (self.cut_sz[0] + self.cut_spc[0]) )
+			if 'x' in top_fit:
+				ncols.append( (vw - 2 * self.top_enc[0] + spc[0]) // (self.cut_sz[0] + spc[0]) )
 
-		if 'y' in bot_fit:
-			nrows.append( (vh - 2 * self.bot_enc[1] + self.cut_spc[1]) // (self.cut_sz[1] + self.cut_spc[1]) )
+			if 'y' in bot_fit:
+				nrows.append( (vh - 2 * self.bot_enc[1] + spc[1]) // (self.cut_sz[1] + spc[1]) )
 
-		if 'y' in top_fit:
-			nrows.append( (vh - 2 * self.top_enc[1] + self.cut_spc[1]) // (self.cut_sz[1] + self.cut_spc[1]) )
+			if 'y' in top_fit:
+				nrows.append( (vh - 2 * self.top_enc[1] + spc[1]) // (self.cut_sz[1] + spc[1]) )
 
-		ncols = min(ncols)
-		nrows = min(nrows)
+			return min(ncols), min(nrows)
 
-		# Safety check
-		if (ncols <= 0) or (nrows <= 0):
-			return None
-
-		# Get final via
-		return self.get(ncols, nrows)
+		return self._array(count)
 
 
 
@@ -1177,8 +1230,12 @@ class MacroPowerVias:
 					for _w in _sw.getWires():
 						if not _w.isVia():
 							continue
-						_boxes.append((_w.xMin() - 400, _w.yMin() - 400,
-							_w.xMax() + 400, _w.yMax() + 400))
+						# Only vias that reach the Metal5 stripes tie a pin.
+						_v = _w.getBlockVia() or _w.getTechVia()
+						_top = _v.getTopLayer() if _v is not None else None
+						if _top is not None and _top.getName() == 'Metal5':
+							_boxes.append((_w.xMin() - 400, _w.yMin() - 400,
+								_w.xMax() + 400, _w.yMax() + 400))
 						# pdngen's giant Via4 arrays (17x3 cuts) are
 						# special/fixed geometry invisible to TritonRoute,
 						# which then routes signals straight through them
@@ -1244,6 +1301,17 @@ class MacroPowerVias:
 		if ox < self.min_m4[0] or oy < self.min_m4[1]:
 			self.reasons['too_small'] += 1
 			return 0
+
+		# Already tied: pdngen (or an earlier step) put a via array of this
+		# net on this pin/stripe crossing. Adding our own single via in the
+		# middle of those arrays left cuts 0.05um apart (V4.2a). The
+		# self.existing boxes were collected for exactly this and never used.
+		cx0, cy0 = max(r.xMin(), st[0]), max(r.yMin(), st[1])
+		cx1, cy1 = min(r.xMax(), st[2]), min(r.yMax(), st[3])
+		for (a, b, c, d) in self.existing.get(net.getName(), ()):
+			if a < cx1 and c > cx0 and b < cy1 and d > cy0:
+				self.reasons['claimed'] += 1
+				return 1
 
 		# A via must sit on the manufacturing grid: Magic streams GDS on a 5nm
 		# grid while KLayout keeps 1nm, so a half-grid centre puts the cut edge
@@ -1653,6 +1721,97 @@ class MacroPowerVias:
 			f'to the stripes, reasons={self.reasons}')
 
 
+
+class Metal4Necks:
+	"""Patch narrow necks between same-net Metal4 power shapes.
+
+	Several independent steps draw Metal4 for the same supply (StdCellPower
+	risers, MacroPowerVias straps and jogs, ModulePowerStrapper). Where two
+	of their rectangles meet side by side with only a short overlap, the
+	merged outline has a neck narrower than the minimum width and a notch
+	(M4.1 / M4.2a in the foundry deck). Fill the corner with a patch
+	covering both shapes over a full wire width, if the patch stays clear of
+	every other net's Metal4.
+	"""
+
+	NETS = ('vdpwr', 'vgnd', 'vapwr')
+
+	def __init__(self, reader):
+		self.reader = reader
+		self.block = reader.block
+		dbu = self.block.getDbUnitsPerMicron()
+		self.layer = reader.db.getTech().findLayer('Metal4')
+		self.minw = self.layer.getWidth()          # 0.28um
+		self.clear = (300 * dbu) // 1000
+		self.full = 2 * self.minw                  # 0.56um patch height
+
+	def _rects(self, net):
+		out = []
+		for sw in net.getSWires():
+			for w in sw.getWires():
+				if w.isVia() or w.getTechLayer().getName() != 'Metal4':
+					continue
+				out.append((w.xMin(), w.yMin(), w.xMax(), w.yMax()))
+		return out
+
+	def run(self):
+		foreign = []
+		for net in self.block.getNets():
+			for r in self._rects(net):
+				foreign.append((net.getName(), r))
+		for inst in self.block.getInsts():
+			if inst.getMaster().getName().startswith('gf180mcu_fd_sc_'):
+				continue
+			for it in inst.getITerms():
+				n = it.getNet()
+				nn = n.getName() if n is not None else '<pin>'
+				for geom in it.getGeometries():
+					l, r = geom[0], geom[1]
+					if hasattr(l, 'getName') and l.getName() == 'Metal4':
+						foreign.append((nn, (r.xMin(), r.yMin(),
+							r.xMax(), r.yMax())))
+
+		n_patch = 0
+		n_skip = 0
+		for name in self.NETS:
+			net = self.block.findNet(name)
+			if net is None:
+				continue
+			rects = self._rects(net)
+			rects.sort()
+			patches = []
+			for i, a in enumerate(rects):
+				for b in rects[i + 1:]:
+					if b[0] > a[2]:
+						break
+					# side by side: x ranges touch or overlap by < min width
+					xo = min(a[2], b[2]) - max(a[0], b[0])
+					yo = min(a[3], b[3]) - max(a[1], b[1])
+					if xo < 0 or xo >= self.minw or yo < 0 or yo >= self.full:
+						continue
+					if a[0] <= b[0] and a[2] >= b[2]:
+						continue  # b inside a in x
+					if b[0] <= a[0] and b[2] >= a[2]:
+						continue
+					ym = (max(a[1], b[1]) + min(a[3], b[3])) // 2
+					p = (min(a[0], b[0]), ym - self.full // 2,
+						max(a[2], b[2]), ym + self.full // 2)
+					c = self.clear
+					if any(fn != name and f[0] - c < p[2] and f[2] + c > p[0]
+							and f[1] - c < p[3] and f[3] + c > p[1]
+							for fn, f in foreign):
+						n_skip += 1
+						continue
+					patches.append(p)
+			if patches:
+				sw = odb.dbSWire.create(net, "ROUTED")
+				odb.createSBoxes(sw, self.layer,
+					[odb.Rect(*p) for p in patches], "STRIPE")
+				n_patch += len(patches)
+		print(f'Metal4Necks: {n_patch} patches, {n_skip} skipped (other net '
+			f'too close)')
+
+
 class WellTaps:
 	"""Insert well-tap cells next to the placed standard cells.
 
@@ -1682,6 +1841,8 @@ class WellTaps:
 			self.master = reader.db.findMaster(self.TAP)
 		except AttributeError:
 			self.master = None
+		rows = list(self.block.getRows())
+		self.site_w = rows[0].getSite().getWidth() if rows else 560
 
 	def _is_logic(self, inst):
 		name = inst.getMaster().getName()
@@ -1743,12 +1904,54 @@ class WellTaps:
 						return False
 				return True
 
+			# DF.13_MV/DF.14_MV: every diffusion of a 5V cell must be within
+			# 15um of a well/substrate tap. Measure from the cell's far edge
+			# to the tap centre, with 2um margin.
+			reach = int(13.0 * self.dbu)
+			half = width // 2
+
+			def covers(t, bb):
+				tc = t + half
+				return max(abs(tc - bb.xMin()), abs(bb.xMax() - tc)) <= reach
+
+			row_taps = [bb.xMin() for inst, bb in items
+				if inst.getMaster().getName().endswith('filltie')]
 			for inst, bb in logic:
+				# A tap already in reach covers the cell: one tap per logic
+				# cell used up the free sites the remaining cells needed.
+				if any(covers(t, bb) for t in row_taps):
+					continue
 				placed = None
 				for x in (bb.xMax(), bb.xMin() - width):
 					if free(x):
 						placed = x
 						break
+				if placed is None:
+					# No free site right next to the cell: any free site
+					# within ~15um of it in the same row still satisfies the
+					# tap distance rules (DF.13/DF.14, ~20um for MV). Cells
+					# that were left untapped are a latch-up risk and the
+					# foundry deck flags them.
+					site = self.site_w
+					for k in range(1, reach // site + 1):
+						for x in (bb.xMax() + k * site,
+								bb.xMin() - width - k * site):
+							if free(x) and covers(x, bb):
+								placed = x
+								break
+						if placed is not None:
+							break
+					# Fallback for packed rows: nearest free site within 15um
+					# of the cell edge (may leave a far diffusion just out of
+					# DF.13/DF.14 reach; the foundry deck reports those).
+					for k in range(1, int(15.0 * self.dbu) // site + 1):
+						if placed is not None:
+							break
+						for x in (bb.xMax() + k * site,
+								bb.xMin() - width - k * site):
+							if free(x):
+								placed = x
+								break
 				if placed is None:
 					n_skip += 1
 					continue
@@ -1776,10 +1979,83 @@ class WellTaps:
 
 				# Account for the new cell in this row's occupancy.
 				occ.append((placed, placed + width))
+				row_taps.append(placed)
 				n_taps += 1
 
 		print(f'WellTaps: {n_taps} taps inserted, {n_skip} logic cells '
-			f'without a free abutting site')
+			f'without a free site in tap reach')
+
+		n_fill = self._fill_gaps(net_vdd, net_vss)
+		print(f'WellTaps: {n_fill} filler cells placed in gaps between cells')
+		if n_skip:
+			print(f'WellTaps: WARNING {n_skip} logic cells have no well tap '
+				f'within reach (DF.13/DF.14, latch-up risk)')
+
+	FILLERS = [(64, 'gf180mcu_fd_sc_mcu7t5v0__fill_64'),
+		(32, 'gf180mcu_fd_sc_mcu7t5v0__fill_32'),
+		(16, 'gf180mcu_fd_sc_mcu7t5v0__fill_16'),
+		(8, 'gf180mcu_fd_sc_mcu7t5v0__fill_8'),
+		(4, 'gf180mcu_fd_sc_mcu7t5v0__fill_4'),
+		(2, 'gf180mcu_fd_sc_mcu7t5v0__fill_2'),
+		(1, 'gf180mcu_fd_sc_mcu7t5v0__fill_1')]
+	MAX_GAP_SITES = 40
+
+	def _fill_gaps(self, net_vdd, net_vss):
+		"""Fill short gaps between standard cells in a row with fillers.
+
+		Without fillers, two cells a few sites apart leave narrow gaps in
+		their Nplus/Pplus implants and Dualgate (NP.2, PP.2, DV.5 in the
+		foundry deck). The stock filler step would fill every row of the
+		mostly empty core, so only gaps of up to MAX_GAP_SITES between two
+		cells in the same row are filled; the fillers also make the rails
+		continuous there.
+		"""
+		masters = []
+		for n, name in self.FILLERS:
+			m = self.reader.db.findMaster(name)
+			if m is not None:
+				masters.append((n, m))
+		if not masters:
+			print('WellTaps: no filler masters, skipping gap fill')
+			return 0
+		site = self.site_w
+		blocks = [b.getBBox() for b in self.block.getBlockages()]
+		macros = [i.getBBox() for i in self.block.getInsts()
+			if not i.getMaster().getName().startswith('gf180mcu_fd_sc_')]
+
+		rows = {}
+		for inst in self.block.getInsts():
+			if not inst.getMaster().getName().startswith('gf180mcu_fd_sc_'):
+				continue
+			bb = inst.getBBox()
+			rows.setdefault(bb.yMin(), []).append((bb.xMin(), bb.xMax(),
+				bb.yMax(), inst.getOrient()))
+
+		n = 0
+		for y, cells in rows.items():
+			cells.sort()
+			for (a0, a1, ytop, orient), (b0, b1, _, _) in zip(cells, cells[1:]):
+				gap = b0 - a1
+				if gap <= 0 or gap % site or gap // site > self.MAX_GAP_SITES:
+					continue
+				if any(bx.xMin() < b0 and bx.xMax() > a1 and
+						bx.yMin() < ytop and bx.yMax() > y
+						for bx in blocks + macros):
+					continue
+				left = gap // site
+				x = a1
+				for w, m in masters:
+					while left >= w:
+						name = f'FILL_GAP_{n:d}'
+						f = odb.dbInst_create(self.block, m, name)
+						f.setOrient(orient)
+						f.setLocation(x, y)
+						f.setPlacementStatus('FIRM')
+						self._connect(f, net_vdd, net_vss)
+						x += w * site
+						left -= w
+						n += 1
+		return n
 
 
 class StdCellPower:
@@ -1866,6 +2142,19 @@ class StdCellPower:
 		self.v45_half = half(self.v45)
 		self.n_macro_keepout = 0
 
+		# Vias already in the design (pdngen's stripe/macro arrays,
+		# ModulePowerStrapper). A riser's Via4 used to land between two of
+		# pdngen's 4x4 arrays, 0.05um from their cuts (V4.2a). Keep 0.36um
+		# (the array spacing, which also covers the 0.26um single-cut rule).
+		self.via_clear = (360 * reader.block.getDbUnitsPerMicron()) // 1000
+		self.existing_vias = []
+		for net in reader.block.getNets():
+			for sw in net.getSWires():
+				for w in sw.getWires():
+					if w.isVia():
+						self.existing_vias.append(
+							(w.xMin(), w.yMin(), w.xMax(), w.yMax()))
+
 	def _via_stack(self, sw, x, y):
 		# Via1..Via3 from the rail strip up to the Metal4 riser, plus
 		# min-area Metal2/Metal3 landing pads.
@@ -1891,11 +2180,19 @@ class StdCellPower:
 		return self._near_macro(x - hx, y - hy, x + hx, y + hy)
 
 	def _riser_near_macro(self, x, ya, yb, ytop):
-		# The Metal4 riser itself plus the Via4 enclosure at the stripe end.
+		# The Metal4 riser itself plus the Via4 enclosure at the stripe end,
+		# and that Via4 must also keep clear of every via already placed.
 		hw = self.riser_w // 2
 		vx, vy = self.v45_half
-		return (self._near_macro(x - hw, ya, x + hw, yb) or
-			self._near_macro(x - vx, ytop - vy, x + vx, ytop + vy))
+		if self._near_macro(x - hw, ya, x + hw, yb) or \
+				self._near_macro(x - vx, ytop - vy, x + vx, ytop + vy):
+			return True
+		c = self.via_clear
+		for (a, b, cc, d) in self.existing_vias:
+			if (a - c < x + vx) and (cc + c > x - vx) and \
+					(b - c < ytop + vy) and (d + c > ytop - vy):
+				return True
+		return False
 
 	def _align(self, v):
 		return (v // self.grid) * self.grid
@@ -2004,9 +2301,18 @@ class StdCellPower:
 		# while still passing DRC. Keep one lane of clearance between risers of
 		# different nets over their common vertical extent.
 		for pnet, px0, px1, py0, py1 in placed:
-			if pnet == net_name:
-				continue
 			if (yb <= py0) or (ya >= py1):
+				continue
+			if pnet == net_name:
+				# Same net: risers either coincide or keep a full Metal4
+				# spacing apart. Two half-overlapping or edge-to-edge risers
+				# of one net leave a narrow Metal4 neck where their ends
+				# meet (M4.1 min width).
+				if (px1 - px0) != lane:
+					continue  # a sideways band, not a vertical riser
+				pc = (px0 + px1) // 2
+				if pc != x and abs(pc - x) < self.riser_w + self.clear:
+					return True
 				continue
 			if (x + lane // 2 > px0) and (x - lane // 2 < px1):
 				return True
@@ -2198,6 +2504,7 @@ class StdCellPower:
 		n_narrow = 0
 		n_blocked = 0
 		n_sideways_fail = 0
+		unpowered = []
 
 		for net_name, rx0, ry0, rx1, ry1 in rails:
 			net = self.reader.block.findNet(net_name)
@@ -2294,6 +2601,7 @@ class StdCellPower:
 			if found is None:
 				n_skipped += 1
 				n_sideways_fail += 1
+				unpowered.append((net_name, rx0, ry0, rx1, ry1))
 				continue
 
 			x, yvia, yriser, ya, yb = found
@@ -2321,6 +2629,15 @@ class StdCellPower:
 		# A rail without a riser is a row of unpowered logic in silicon.
 		# Never let that through as a log line.
 		if n_skipped:
+			dbu = self.reader.block.getDbUnitsPerMicron()
+			for net_name, x0, y0, x1, y1 in unpowered:
+				cells = [i.getName() for i in self.reader.block.getInsts()
+					if i.getMaster().getName().startswith('gf180mcu_fd_sc_')
+					and i.getBBox().xMin() < x1 and i.getBBox().xMax() > x0
+					and i.getBBox().yMin() <= y1 and i.getBBox().yMax() >= y0]
+				print(f'StdCellPower: unpowered {net_name} rail '
+					f'({x0/dbu:.2f},{y0/dbu:.2f})-({x1/dbu:.2f},{y1/dbu:.2f}) '
+					f'cells: {cells[:6]}')
 			raise RuntimeError(
 				f'StdCellPower: {n_skipped} standard cell rails have no '
 				f'power connection')
@@ -3476,6 +3793,10 @@ def route(
 
 	# Create the ring power straps
 	p = RingPowerStrapper(reader)
+	p.run()
+
+	# Smooth out narrow necks where two power steps' Metal4 meets
+	p = Metal4Necks(reader)
 	p.run()
 
 	# Analog router

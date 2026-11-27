@@ -42,30 +42,30 @@ def gridify(value, grid):
     return round(value / grid) * grid
 
 
-# Macros that get a hard placement blockage around them.
+# Hard placement blockage around every hard macro.
 #
-# The Arrakeen SRAM has all of its signal pins (a/d/we/q, Metal3) starting
-# exactly at its bottom edge. With the two banks stacked 7.6um apart, the one
-# legal standard-cell row in the gap had its top power rail lying *on*
-# sram_lo's bottom edge. StdCellPower then put a Via1-3 stack on that rail,
-# and the via pads reach 0.14um into the macro: one landed on q[22] and
-# shorted it to vgnd (and others left M2/Via2 spacing errors against the
-# macro's column periphery). No via can sit on such a rail without entering
-# the macro, so keep the cells (and with them their rails and risers) away.
-HALO_MASTERS = {
-    "SP6TSRAM256x32": (2.0, 2.0),  # (x, y) halo in um
-}
+# A standard-cell row whose boundary coincides with a macro edge has one of
+# its power rails lying *on* that edge. No via can be put on such a rail
+# without its pads entering the macro, where signal pins start right at the
+# boundary: that is how StdCellPower's via stack shorted the SRAM's q[22] to
+# vgnd. The same happens at every mux, tile and power-gate edge, so keep
+# cells (and with them their rails, taps and risers) 2um away from all of
+# them. StdCellPower additionally refuses any via within 0.3um of a macro
+# and fails the run if a rail is left unpowered.
+MACRO_HALO = (2.0, 2.0)  # (x, y) in um
+STDCELL_PREFIX = "gf180mcu_fd_sc_"
 
 
-def add_sram_halos(reader):
+def add_macro_halos(reader):
     dbu = reader.block.getDbUnitsPerMicron()
+    hx, hy = int(MACRO_HALO[0] * dbu), int(MACRO_HALO[1] * dbu)
     n = 0
     for inst in reader.block.getInsts():
-        halo = HALO_MASTERS.get(inst.getMaster().getName())
-        if halo is None:
+        if inst.getMaster().getName().startswith(STDCELL_PREFIX):
+            continue
+        if not inst.isPlaced():
             continue
         bb = inst.getBBox()
-        hx, hy = int(halo[0] * dbu), int(halo[1] * dbu)
         # A dbBlockage is a hard placement blockage unless marked soft.
         odb.dbBlockage_create(
             reader.block,
@@ -73,7 +73,7 @@ def add_sram_halos(reader):
             bb.xMax() + hx, bb.yMax() + hy,
         )
         n += 1
-        print(f"Placement halo {halo[0]}/{halo[1]}um around {inst.getName()}")
+    print(f"Placement halo {MACRO_HALO[0]}/{MACRO_HALO[1]}um around {n} macros")
     return n
 
 
@@ -127,7 +127,7 @@ def manual_macro_placement(reader, config, fixed):
         inst.setPlacementStatus("FIRM" if fixed else "PLACED")
         placed += 1
 
-    add_sram_halos(reader)
+    add_macro_halos(reader)
 
     missing = sorted(item[0] for item in macros.values())
     if missing:

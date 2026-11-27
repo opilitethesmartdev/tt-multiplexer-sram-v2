@@ -61,6 +61,18 @@ module tt_sram_tb;
 	integer i;
 	integer cycles;
 
+	localparam integer OTHER_MUX = 9;
+	reg [63:0] sum_before;
+
+	function [63:0] mem_sum(input dummy);
+		integer w;
+		begin
+			mem_sum = 0;
+			for (w = 0; w < 256; w = w + 1)
+				mem_sum = mem_sum * 3 + dut_I.sram_lo_I.mem[w] + 7 * dut_I.sram_hi_I.mem[w];
+		end
+	endfunction
+
 	initial begin
 		$dumpfile("tt_sram_tb.vcd");
 		$dumpvars(0, tt_sram_tb);
@@ -94,6 +106,31 @@ module tt_sram_tb;
 				dut_I.branch[MUX_ID].check_mask.block[BLK_ID].um_I.block_11_0.tt_um_I.err_bits);
 
 		$display("PASS: shared SRAM BIST, 512 words x 32 bits, both banks, byte masks (%0d cycles)", cycles);
+
+		// Now select a project in a branch without SRAM (branch 9, block 0)
+		// and run it: the SRAM bus must be driven to 0 (not float) and the
+		// SRAM contents must not change.
+		sum_before = mem_sum(0);
+		ctrl_ena = 1'b0;
+		#20 ctrl_sel_rst_n = 1'b0;
+		#20 ctrl_sel_rst_n = 1'b1;
+		for (i = 0; i < OTHER_MUX * 32; i = i + 1) begin
+			#5 ctrl_sel_inc = 1'b1;
+			#5 ctrl_sel_inc = 1'b0;
+		end
+		#20 ctrl_ena = 1'b1;
+		repeat (200) @(posedge u_clk);
+		#1;
+		if (dut_I.spine_top_sram_ow !== {`TT_SRAM_OW{1'b0}})
+			$fatal(1, "FAIL: SRAM spine not held low while another project runs: %b",
+				dut_I.spine_top_sram_ow);
+		if (dut_I.sram_ow !== {`TT_SRAM_OW{1'b0}})
+			$fatal(1, "FAIL: SRAM request not zero while another project runs: %b",
+				dut_I.sram_ow);
+		if (mem_sum(0) !== sum_before)
+			$fatal(1, "FAIL: SRAM contents changed while another project ran");
+		$display("PASS: SRAM bus held low and contents intact while branch %0d runs", OTHER_MUX);
+		$display("ALL PASS");
 		$finish;
 	end
 
@@ -105,6 +142,11 @@ module tt_sram_tb;
 	// Negative control: the original layout bug, sram_lo q[22] shorted to
 	// vgnd. The BIST must fail with exactly bit 22 in its error bitmap.
 	initial force dut_I.sram_q_lo[22] = 1'b0;
+`endif
+`ifdef INJECT_SEL_STUCK
+	// Negative control: the SRAM branch decode stuck "selected", so the
+	// keeper never holds the spine and the floating bus reaches the SRAM.
+	initial force dut_I.sram_sel_top = 1'b1;
 `endif
 `ifdef INJECT_BANK_STUCK
 	// Negative control: bank select stuck low, so the high bank is never
