@@ -1,3 +1,6 @@
 tt_user_module.v
 *_tb
 *.vcd
+tt_sram_tb_*
+tt_sram_tb.log
+modules_sram_placed.yaml

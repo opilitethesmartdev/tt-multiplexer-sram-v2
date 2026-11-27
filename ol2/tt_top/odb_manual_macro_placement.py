@@ -10,6 +10,8 @@
 import sys
 from decimal import Decimal
 
+import odb
+
 from reader import click_odb, click
 
 
@@ -38,6 +40,46 @@ def lef_rot_to_oa_rot(rot):
 
 def gridify(value, grid):
     return round(value / grid) * grid
+
+
+# Hard placement blockage around every hard macro.
+#
+# A standard-cell row whose boundary coincides with a macro edge has one of
+# its power rails lying *on* that edge. No via can be put on such a rail
+# without its pads entering the macro, where signal pins start right at the
+# boundary: that is how StdCellPower's via stack shorted the SRAM's q[22] to
+# vgnd. The same happens at every mux, tile and power-gate edge, so keep
+# cells (and with them their rails, taps and risers) 2um away from all of
+# them. StdCellPower additionally refuses any via within 0.3um of a macro
+# and fails the run if a rail is left unpowered.
+MACRO_HALO = (2.0, 2.0)  # (x, y) in um
+# The SRAMs get a wider side halo: their antenna diodes were pulled into the
+# narrow strip right beside the macro, where no power riser can reach a
+# stripe (StdCellPower then refuses the run).
+MACRO_HALO_BY_MASTER = {"SP6TSRAM256x32": (10.0, 2.0)}
+STDCELL_PREFIX = "gf180mcu_fd_sc_"
+
+
+def add_macro_halos(reader):
+    dbu = reader.block.getDbUnitsPerMicron()
+    n = 0
+    for inst in reader.block.getInsts():
+        if inst.getMaster().getName().startswith(STDCELL_PREFIX):
+            continue
+        if not inst.isPlaced():
+            continue
+        halo = MACRO_HALO_BY_MASTER.get(inst.getMaster().getName(), MACRO_HALO)
+        hx, hy = int(halo[0] * dbu), int(halo[1] * dbu)
+        bb = inst.getBBox()
+        # A dbBlockage is a hard placement blockage unless marked soft.
+        odb.dbBlockage_create(
+            reader.block,
+            bb.xMin() - hx, bb.yMin() - hy,
+            bb.xMax() + hx, bb.yMax() + hy,
+        )
+        n += 1
+    print(f"Placement halo {MACRO_HALO[0]}/{MACRO_HALO[1]}um around {n} macros")
+    return n
 
 
 @click.command()
@@ -89,6 +131,8 @@ def manual_macro_placement(reader, config, fixed):
         inst.setLocation(gridify(x, 5), gridify(y, 5))
         inst.setPlacementStatus("FIRM" if fixed else "PLACED")
         placed += 1
+
+    add_macro_halos(reader)
 
     missing = sorted(item[0] for item in macros.values())
     if missing:

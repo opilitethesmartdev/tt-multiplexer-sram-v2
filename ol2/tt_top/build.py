@@ -68,6 +68,33 @@ class CustomRoute(OdbpyStep):
 
 
 @Step.factory.register()
+class GdsShortCheck(Step):
+	"""Fail on metal shorts in the final GDS, independently of LVS.
+
+	See gds_short_check.py: KLayout extracts Metal1-5 connectivity straight
+	from the streamed GDS and fails on supply-supply shorts, signals merged
+	into a supply, and non-supply macro pins on a supply net. Unlike the LVS
+	path it never looks at (or edits) a netlist, so the netlist repairs in
+	MergeWellNets cannot mask what it finds.
+	"""
+
+	id = "TT.Top.GdsShortCheck"
+	name = "Independent GDS metal-short check"
+	inputs = [DesignFormat.GDS]
+	outputs = []
+
+	def run(self, state_in, **kwargs):
+		script = os.path.join(os.path.dirname(__file__), 'gds_short_check.py')
+		report = os.path.join(self.step_dir, 'gds_short_check.json')
+		self.run_subprocess([
+			'klayout', '-b', '-r', script,
+			'-rd', f'gds_in={state_in[DesignFormat.GDS]}',
+			'-rd', f'report_out={report}',
+		])
+		return {}, {}
+
+
+@Step.factory.register()
 class OptionalManualMacroPlacement(Odb.ManualMacroPlacement):
 	"""Place all macros present in the synthesized design.
 
@@ -566,7 +593,17 @@ class MergeWellNets(Step):
 				f'{self.config["DESIGN_NAME"]}.def')))
 			if cands:
 				def_path = cands[-1]
-		text, signal_fixed = self._repair_signal_pins(text, def_path)
+		# Do NOT move signal pins off a supply net. The extractor reports what
+		# the layout's metal connects; when it puts a signal pin on a supply,
+		# that is a short in the GDS, not an extraction artefact. This used to
+		# "repair" sram_lo/q[22] -> vgnd back to its DEF net, which hid a real
+		# short (a vgnd via stack landing on the q[22] pin) from LVS. Report
+		# what the DEF disagrees with, and let netgen fail on it.
+		_, signal_fixed = self._repair_signal_pins(text, def_path)
+		if signal_fixed:
+			print(f'MergeWellNets: WARNING {signal_fixed} signal pins are on a '
+				f'supply net in the layout but not in the DEF: these are '
+				f'shorts in the GDS and are left for LVS to report')
 		text, count = re.subn(r'(?<!\S)\S+/VNW(?!\S)', 'vdpwr', text)
 		text, dropped = self._collapse_ports(text, self.config['DESIGN_NAME'])
 
@@ -580,7 +617,7 @@ class MergeWellNets(Step):
 			f'carries a signal pin), '
 			f'{short_res} same-supply short resistors dropped, '
 			f'{supply_renamed} supply net tokens renamed to the schematic names, '
-			f'{signal_fixed} signal pins moved off a supply net')
+			f'{signal_fixed} signal pins found on a supply net (not moved)')
 
 		return {DesignFormat.SPICE: Path(dst)}, {}
 
@@ -832,6 +869,10 @@ class TopFlow(SequentialFlow):
 		CustomRoute,
 		OpenROAD.GlobalRouting,
 		OpenROAD.DetailedRouting,
+		# Report OpenROAD's own antenna count. Note its LEF-based model
+		# under-counts against the foundry deck (no thick/thin gate split);
+		# the foundry antenna deck in the wafer.space precheck is the gate.
+		OpenROAD.CheckAntennas,
 		Checker.TrDRC,
 		Odb.ReportDisconnectedPins,
 		Checker.DisconnectedPins,
@@ -844,6 +885,7 @@ class TopFlow(SequentialFlow):
 		KLayout.StreamOut,
 		KLayout.XOR,
 		Checker.XOR,
+		GdsShortCheck,
 		Magic.DRC,
 		Checker.MagicDRC,
 		ExtractSpice,
@@ -1088,9 +1130,37 @@ if __name__ == '__main__':
 		"FP_PDN_CORE_RING_VSPACING" :  2.0,
 		"FP_PDN_CORE_RING_HSPACING" :  2.0,
 
+		# Placement: leave 2 free sites on each side of every cell. With no
+		# padding the placer packed 20um flip-flops edge to edge, so the cells
+		# inside such a run had no free site within well-tap reach
+		# (DF.13/DF.14, latch-up rule); WellTaps puts a tap (2 sites) into
+		# these gaps and fills the rest with fillers.
+		"GPL_CELL_PADDING"      : 4,
+		"DPL_CELL_PADDING"      : 4,
+
 		# Routing
-		"GRT_ALLOW_CONGESTION"  : True,
-		"GRT_REPAIR_ANTENNAS"   : False,
+		# Global routing must produce a legal plan. With congestion allowed
+		# and the default 30% track reserve, the ~12um channel between
+		# branch 0's mux and its tiles (whose pins do not line up with the
+		# mux's) overflowed, and the global router "solved" it by sending a few
+		# tile<->mux nets straight through the tile's routing obstruction. The
+		# detailed router then stays inside those guides and leaves Metal3
+		# shorts through the tile (block_0_0 uio_oe[0]/[4]); which net it hit
+		# changed from run to run. Total routing usage is ~1% of the chip, so
+		# the reserve only starves those channels: with a 5% reserve the global
+		# router finds a plan with zero overflow. Refuse congestion outright so
+		# a future regression fails here instead of in silicon.
+		"GRT_ALLOW_CONGESTION"  : False,
+		"GRT_ADJUSTMENT"        : 0.05,
+		"GRT_LAYER_ADJUSTMENTS" : [0.05, 0.05, 0.05, 0.05, 0.05],
+		"GRT_OVERFLOW_ITERS"    : 100,
+		# The detailed router ran single threaded (~13 min); GitHub runners
+		# have 4 cores.
+		"ROUTING_CORES"         : 4,
+		# Antenna: OpenROAD.RepairAntennas cannot run here (the custom
+		# pre-routes make it treat the design as detail-routed, and its
+		# parasitics estimate then fails), and its LEF model misses most of
+		# what the foundry deck reports.
 		"DRT_ANTENNA_REPAIR_ITERS" : 0,
 		# A healthy run terminates on its own once there are no violations
 		# left. The last remaining defect is one module<->mux net that the
