@@ -90,14 +90,18 @@ tt:
     addr_width: 9
     data_width: 32
     wmask_width: 4
-    # Branches whose mux carries the shared SRAM sideband. The memory itself
-    # occupies the 4x4 reservation at mux 9/13, so no user design can sit in
-    # those branches; the ring of branches around it gets the sideband:
-    #   11 = same band, right of the controller   5 = directly above
-    #   15 = same band, lower right                7 = above right
-    # All four are on the same sram_side_sel half, so only one bus spine is
-    # used. Each enabled branch costs 79 sideband wires to its mux.
-    branches: [5, 7, 11, 15]
+    # Branches whose mux carries the shared SRAM sideband: 4 branches x 8
+    # tiles = 32 SRAM-capable tiles. The memory itself is the 4x4 block at
+    # x 0-3, rows 9-12 (it covers half of branches 1 and 9 and all of 5, so 5
+    # has no mux). The four full branches next to it:
+    #    3 = right, rows 8-9     7 = right, rows 10-11
+    #   11 = right, rows 12-13  13 = left, rows 14-15 (above the memory)
+    # 15 is not used: Hack Club reserves it for huge modules.
+    # 7 used to be an analog group inherited from Sky130; GF180 has no analog
+    # switches, so that branch had no mux and no use.
+    # All four are odd branches, so they share the top SRAM bus spine.
+    # Each enabled branch costs 79 sideband wires to its mux.
+    branches: [3, 7, 11, 13]
   block:
     w: -1
     h: -1
@@ -122,14 +126,7 @@ tt:
         3:  1611500
         4:  1822500
         5:  2033500
-    - mux_id: [ 7 ]
-      pins:
-        6:  2666500
-        7:  2877500
-        8:  3088500
-        9:  3299500
-        10: 3510500
-        11: 3721500
+    # Kept without a mux: the 4x4 shared-SRAM block sits on this branch.
     - mux_id: [ 5 ]
       pins:
         12: 3721500

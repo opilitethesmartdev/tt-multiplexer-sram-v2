@@ -2,10 +2,11 @@
  * tt_sram_tb.v
  *
  * End-to-end test of the shared SRAM for the GF180 build: a self-checking
- * tile (tt_um_sram_bist) in branch 11 / block 0 - the only branch of this
- * chip that both exists (TT_MUX_MASK) and carries the SRAM sideband
- * (TT_SRAM_MASK) - is selected through the real tt_ctrl protocol and then
- * writes and reads all 512 words through tt_mux, the spine and tt_top.
+ * tile (tt_um_sram_bist) sits in every SRAM-capable slot (branches 3, 7, 11
+ * and 13, blocks 0-7: 32 tiles). Each one in turn is selected through the
+ * real tt_ctrl protocol and writes and reads all 512 words through tt_mux,
+ * the spine and tt_top. Before each tile the memory is scrambled through a
+ * backdoor, so a tile cannot pass by reading back an earlier tile's data.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,8 +16,17 @@
 
 module tt_sram_tb;
 
-	localparam integer MUX_ID = 11;
-	localparam integer BLK_ID = 0;
+	localparam integer N_TILES = 32;
+	integer tiles [0:N_TILES-1];	// mux_id * 32 + blk_id per tile
+	integer t, w;
+	initial begin
+		for (t = 0; t < 8; t = t + 1) begin
+			tiles[t]      = 3  * 32 + t;
+			tiles[t + 8]  = 7  * 32 + t;
+			tiles[t + 16] = 11 * 32 + t;
+			tiles[t + 24] = 13 * 32 + t;
+		end
+	end
 
 	wire [43:0] io_in;
 	wire [43:0] io_out;
@@ -77,35 +87,57 @@ module tt_sram_tb;
 		$dumpfile("tt_sram_tb.vcd");
 		$dumpvars(0, tt_sram_tb);
 
-		// Select the tile: reset the counter, pulse inc MUX_ID*32+BLK_ID times
-		#50 ctrl_sel_rst_n = 1'b1;
-		for (i = 0; i < MUX_ID * 32 + BLK_ID; i = i + 1) begin
-			#5 ctrl_sel_inc = 1'b1;
-			#5 ctrl_sel_inc = 1'b0;
-		end
-		#20 ctrl_ena = 1'b1;
+		for (t = 0; t < N_TILES; t = t + 1) begin
+			// Scramble the memory so stale data from the previous tile
+			// cannot make this one pass.
+			for (w = 0; w < 256; w = w + 1) begin
+				dut_I.sram_lo_I.mem[w] = $random;
+				dut_I.sram_hi_I.mem[w] = $random;
+			end
 
-		// Reset the user design (and the SRAM front-end) under clock
-		repeat (4) @(posedge u_clk);
-		#1 u_rst_n = 1'b1;
+			// Select the tile: reset the counter, pulse inc mux*32+blk times
+			ctrl_ena = 1'b0;
+			u_rst_n = 1'b0;
+			#20 ctrl_sel_rst_n = 1'b0;
+			#20 ctrl_sel_rst_n = 1'b1;
+			for (i = 0; i < tiles[t]; i = i + 1) begin
+				#5 ctrl_sel_inc = 1'b1;
+				#5 ctrl_sel_inc = 1'b0;
+			end
+			#20 ctrl_ena = 1'b1;
 
-		cycles = 0;
-		while (!uo[0] && cycles < 3000) begin
+			// Reset the user design (and the SRAM front-end) under clock
+			repeat (4) @(posedge u_clk);
+			#1 u_rst_n = 1'b1;
+
+			// The BIST must start from scratch: done set already would mean
+			// we are looking at a stale or wrong tile.
 			@(posedge u_clk);
-			cycles = cycles + 1;
+			#1;
+			if (uo[0])
+				$fatal(1, "FAIL: branch %0d block %0d: done already set after reset",
+					tiles[t] / 32, tiles[t] % 32);
+
+			cycles = 0;
+			while (!uo[0] && cycles < 3000) begin
+				@(posedge u_clk);
+				cycles = cycles + 1;
+			end
+
+			#1;
+			if (!uo[0])
+				$fatal(1, "FAIL: branch %0d block %0d: BIST did not finish (uo=%b)",
+					tiles[t] / 32, tiles[t] % 32, uo);
+			if (!uo[1])
+				$fatal(1, "FAIL: branch %0d block %0d: SRAM read-back mismatch (uo=%b)",
+					tiles[t] / 32, tiles[t] % 32, uo);
+			if (cycles < 1024)
+				$fatal(1, "FAIL: branch %0d block %0d: finished in %0d cycles, too fast for 512 writes + reads",
+					tiles[t] / 32, tiles[t] % 32, cycles);
+			$display("PASS: branch %0d block %0d: 512 words x 32 bits, both banks, byte masks (%0d cycles)",
+				tiles[t] / 32, tiles[t] % 32, cycles);
 		end
-
-		#1;
-		if (!uo[0])
-			$fatal(1, "FAIL: BIST did not finish (uo=%b)", uo);
-		if (dut_I.branch[MUX_ID].check_mask.block[BLK_ID].um_I.block_11_0.tt_um_I.n_checked !== 10'd512)
-			$fatal(1, "FAIL: only %0d words checked",
-				dut_I.branch[MUX_ID].check_mask.block[BLK_ID].um_I.block_11_0.tt_um_I.n_checked);
-		if (!uo[1])
-			$fatal(1, "FAIL: SRAM read-back mismatch, error bits = %h",
-				dut_I.branch[MUX_ID].check_mask.block[BLK_ID].um_I.block_11_0.tt_um_I.err_bits);
-
-		$display("PASS: shared SRAM BIST, 512 words x 32 bits, both banks, byte masks (%0d cycles)", cycles);
+		$display("PASS: shared SRAM BIST from all %0d SRAM tiles", N_TILES);
 
 		// Now select a project in a branch without SRAM (branch 9, block 0)
 		// and run it: the SRAM bus must be driven to 0 (not float) and the
@@ -135,7 +167,7 @@ module tt_sram_tb;
 	end
 
 	initial begin
-		#2000000 $fatal(1, "FAIL: timeout");
+		#50000000 $fatal(1, "FAIL: timeout");
 	end
 
 `ifdef INJECT_Q22_SHORT

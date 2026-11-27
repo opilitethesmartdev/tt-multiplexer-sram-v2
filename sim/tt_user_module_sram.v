@@ -63,8 +63,1093 @@ module tt_user_module #(
 
 	generate
 		case ({MUX_ID[15:0], BLK_ID[15:0]})
+		{ 16'd3, 16'd0 }:
+		begin : block_3_0
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd3, 16'd1 }:
+		begin : block_3_1
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd3, 16'd2 }:
+		begin : block_3_2
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd3, 16'd3 }:
+		begin : block_3_3
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd3, 16'd4 }:
+		begin : block_3_4
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd3, 16'd5 }:
+		begin : block_3_5
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd3, 16'd6 }:
+		begin : block_3_6
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd3, 16'd7 }:
+		begin : block_3_7
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd7, 16'd0 }:
+		begin : block_7_0
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd7, 16'd1 }:
+		begin : block_7_1
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd7, 16'd2 }:
+		begin : block_7_2
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd7, 16'd3 }:
+		begin : block_7_3
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd7, 16'd4 }:
+		begin : block_7_4
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd7, 16'd5 }:
+		begin : block_7_5
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd7, 16'd6 }:
+		begin : block_7_6
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd7, 16'd7 }:
+		begin : block_7_7
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
 		{ 16'd11, 16'd0 }:
 		begin : block_11_0
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd11, 16'd1 }:
+		begin : block_11_1
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd11, 16'd2 }:
+		begin : block_11_2
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd11, 16'd3 }:
+		begin : block_11_3
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd11, 16'd4 }:
+		begin : block_11_4
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd11, 16'd5 }:
+		begin : block_11_5
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd11, 16'd6 }:
+		begin : block_11_6
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd11, 16'd7 }:
+		begin : block_11_7
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd13, 16'd0 }:
+		begin : block_13_0
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd13, 16'd1 }:
+		begin : block_13_1
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd13, 16'd2 }:
+		begin : block_13_2
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd13, 16'd3 }:
+		begin : block_13_3
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd13, 16'd4 }:
+		begin : block_13_4
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd13, 16'd5 }:
+		begin : block_13_5
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd13, 16'd6 }:
+		begin : block_13_6
+`ifdef USE_POWER_PINS
+			wire l_vdpwr;
+			wire l_vapwr;
+`endif
+			tt_um_sram_bist tt_um_I (
+`ifdef USE_POWER_PINS
+				.VDPWR   (l_vdpwr),
+				.VAPWR   (l_vapwr),
+				.VGND    (VGND),
+`endif
+				.uio_in  (uio_in),
+				.uio_out (uio_out),
+				.uio_oe  (uio_oe),
+				.uo_out  (uo_out),
+				.ui_in   (ui_in),
+				.ena     (ena),
+				.clk     (clk),
+				.rst_n   (rst_n)
+				,
+				.sram_cs    (sram_cs),
+				.sram_we    (sram_we),
+				.sram_wmask (sram_wmask),
+				.sram_addr  (sram_addr),
+				.sram_wdata (sram_wdata),
+				.sram_rdata (sram_rdata)
+			);
+`ifdef USE_POWER_PINS
+			assign l_vdpwr = VDPWR;
+`endif
+`ifdef USE_POWER_PINS
+			assign l_vapwr = VAPWR;
+`endif
+		end
+		{ 16'd13, 16'd7 }:
+		begin : block_13_7
 `ifdef USE_POWER_PINS
 			wire l_vdpwr;
 			wire l_vapwr;
