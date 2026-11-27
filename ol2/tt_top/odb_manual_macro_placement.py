@@ -10,6 +10,8 @@
 import sys
 from decimal import Decimal
 
+import odb
+
 from reader import click_odb, click
 
 
@@ -38,6 +40,41 @@ def lef_rot_to_oa_rot(rot):
 
 def gridify(value, grid):
     return round(value / grid) * grid
+
+
+# Macros that get a hard placement blockage around them.
+#
+# The Arrakeen SRAM has all of its signal pins (a/d/we/q, Metal3) starting
+# exactly at its bottom edge. With the two banks stacked 7.6um apart, the one
+# legal standard-cell row in the gap had its top power rail lying *on*
+# sram_lo's bottom edge. StdCellPower then put a Via1-3 stack on that rail,
+# and the via pads reach 0.14um into the macro: one landed on q[22] and
+# shorted it to vgnd (and others left M2/Via2 spacing errors against the
+# macro's column periphery). No via can sit on such a rail without entering
+# the macro, so keep the cells (and with them their rails and risers) away.
+HALO_MASTERS = {
+    "SP6TSRAM256x32": (2.0, 2.0),  # (x, y) halo in um
+}
+
+
+def add_sram_halos(reader):
+    dbu = reader.block.getDbUnitsPerMicron()
+    n = 0
+    for inst in reader.block.getInsts():
+        halo = HALO_MASTERS.get(inst.getMaster().getName())
+        if halo is None:
+            continue
+        bb = inst.getBBox()
+        hx, hy = int(halo[0] * dbu), int(halo[1] * dbu)
+        # A dbBlockage is a hard placement blockage unless marked soft.
+        odb.dbBlockage_create(
+            reader.block,
+            bb.xMin() - hx, bb.yMin() - hy,
+            bb.xMax() + hx, bb.yMax() + hy,
+        )
+        n += 1
+        print(f"Placement halo {halo[0]}/{halo[1]}um around {inst.getName()}")
+    return n
 
 
 @click.command()
@@ -89,6 +126,8 @@ def manual_macro_placement(reader, config, fixed):
         inst.setLocation(gridify(x, 5), gridify(y, 5))
         inst.setPlacementStatus("FIRM" if fixed else "PLACED")
         placed += 1
+
+    add_sram_halos(reader)
 
     missing = sorted(item[0] for item in macros.values())
     if missing:

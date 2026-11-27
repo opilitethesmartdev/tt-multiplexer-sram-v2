@@ -80,6 +80,28 @@ rtl/tt_user_module.v: rtl/tt_user_module.v.mak cfg/modules_placed.yaml
 	./py/gen_tt_user_module.py $^ > $@
 
 # Simulation targets
+
+# Shared SRAM end-to-end test (GF180): a self-checking tile in branch 11
+# writes and reads all 512 words through tt_mux / tt_ctrl / tt_top. Also runs
+# two fault injections that must FAIL, so a passing result means something.
+SRAM_SIM_SRC = sim/tt_sram_tb.v sim/tt_um_sram_bist.v sim/tt_user_module_sram.v
+SRAM_SIM_RTL = rtl/tt_top.v rtl/tt_ctrl.v rtl/tt_mux.v rtl/SP6TSRAM256x32.v \
+	$(wildcard rtl/prim_generic/*.v)
+
+sim/tt_user_module_sram.v: rtl/tt_user_module.v.mak sim/modules_sram_sim.yaml
+	./py/place_modules.py sim/modules_sram_sim.yaml sim/modules_sram_placed.yaml
+	./py/gen_tt_user_module.py rtl/tt_user_module.v.mak sim/modules_sram_placed.yaml > $@
+
+sim_sram: rtl/tt_defs.vh $(SRAM_SIM_SRC) $(SRAM_SIM_RTL)
+	$(IVERILOG) -g2012 -DSIM -Irtl -o sim/tt_sram_tb $(SRAM_SIM_RTL) $(SRAM_SIM_SRC)
+	cd sim && vvp -n tt_sram_tb | tee tt_sram_tb.log && grep -q '^PASS' tt_sram_tb.log
+	for f in INJECT_Q22_SHORT INJECT_BANK_STUCK; do \
+		$(IVERILOG) -g2012 -DSIM -D$$f -Irtl -o sim/tt_sram_tb_$$f $(SRAM_SIM_RTL) $(SRAM_SIM_SRC) && \
+		(cd sim && ! vvp -n tt_sram_tb_$$f | grep -q '^PASS') && echo "$$f correctly detected" || exit 1; \
+	done
+
+.PHONY: sim_sram
+
 sim: sim/tt_top_tb.vcd
 
 sim/tt_top_tb: $(SIM_SRC) $(RTL_SRC) $(RTL_INC) $(PRIM_SRC)

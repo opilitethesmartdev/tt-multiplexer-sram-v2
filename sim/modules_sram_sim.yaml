@@ -1,0 +1,6 @@
+modules:
+  - name: sram_bist
+    mux_id: 11
+    blk_id: 0
+    uses_sram: true
+    pg_vdd: false
